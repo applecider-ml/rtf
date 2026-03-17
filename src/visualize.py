@@ -90,7 +90,7 @@ def plot_latent_scatter(proj, labels, names, colors, title, output_path,
     # Plot rare classes last (on top) for visibility
     unique_labels = np.unique(labels)
     counts = {lbl: (labels == lbl).sum() for lbl in unique_labels}
-    sorted_labels = sorted(unique_labels, key=lambda l: counts[l], reverse=True)
+    sorted_labels = sorted(unique_labels, key=lambda lbl: counts[lbl], reverse=True)
 
     for lbl in sorted_labels:
         mask = labels == lbl
@@ -148,7 +148,7 @@ def plot_multi_dim_comparison(all_projs, all_labels, names, colors, dims, method
 
     unique_labels = np.unique(all_labels[0])
     counts = {lbl: (all_labels[0] == lbl).sum() for lbl in unique_labels}
-    sorted_labels = sorted(unique_labels, key=lambda l: counts[l], reverse=True)
+    sorted_labels = sorted(unique_labels, key=lambda lbl: counts[lbl], reverse=True)
 
     for i, (proj, labels, dim) in enumerate(zip(all_projs, all_labels, dims)):
         ax = axes[i]
