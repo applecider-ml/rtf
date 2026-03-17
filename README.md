@@ -1,10 +1,12 @@
-# alert-compression
+# RTF: Rapid Transient Fingerprints
 
-Latent-space compression of ZTF photometry alerts using transformer autoencoders. Part of the [BOOM](https://github.com/boom-astro) project and the AppleCiDEr pipeline.
+Latent-space compression of astronomical alert streams using transformer autoencoders. Encodes variable-length multi-band light curves into compact fixed-length fingerprints that preserve astrophysically meaningful information.
+
+Part of the [BOOM](https://github.com/boom-astro) project and the [AppleCiDEr](https://github.com/applecider-ml) pipeline.
 
 ## Motivation
 
-LSST will produce ~10M alerts/night. Current brokers filter this to a small subset, discarding most of the stream. This package explores compressing the full alert stream into fixed-length latent vectors that preserve astrophysically meaningful information, enabling:
+LSST will produce ~10M alerts/night. Current brokers filter this to a small subset, discarding most of the stream. RTF compresses the full alert stream into fixed-length latent vectors, enabling:
 
 - **Alert distribution at ~1 MBps** (streaming HD video bandwidth) instead of the full ~100 MBps raw stream
 - **Similarity search** via cosine distance in latent space
@@ -41,12 +43,45 @@ Sequences are padded to max length 257 and normalized using global training set 
 
 ## Results
 
-### Architecture comparison (10 latent dimensions, 200 epochs each)
+### Reconstruction quality in physical units
 
-#### Coarse 5-class linear probe accuracy
+The AE reconstructs light curves to sub-0.2 mag accuracy at moderate compression:
 
-| Dim | Bytes/alert | Compression | AE | VAE | VQ-VAE |
-|-----|-------------|-------------|-----|-----|--------|
+| Mode | Dim | Bytes | Compress | Mag (mean) | Mag (median) | Mag (90th pct) | Time error (days) | Band acc |
+|------|-----|-------|----------|-----------|-------------|----------------|-------------------|----------|
+| AE | 2 | 8B | 900x | 0.34 | 0.26 | 0.60 | 7.1 | 62.7% |
+| AE | 8 | 32B | 225x | 0.25 | 0.19 | 0.46 | 3.5 | 70.7% |
+| AE | 32 | 128B | 56x | 0.22 | 0.16 | 0.40 | 2.6 | 72.9% |
+| **AE** | **64** | **256B** | **28x** | **0.21** | **0.16** | **0.40** | **2.5** | **73.3%** |
+| AE | 256 | 1024B | 7x | 0.21 | 0.16 | 0.40 | 2.5 | 73.6% |
+| AE | 1024 | 4096B | 1.8x | 0.21 | 0.16 | 0.40 | 2.4 | 73.9% |
+| VAE | 64 | 256B | 28x | 0.42 | 0.33 | 0.73 | 15.6 | 64.7% |
+| VQ-VAE | 64 | 256B | 28x | 0.37 | 0.28 | 0.65 | 7.3 | 63.9% |
+
+Reconstruction saturates at dim ~64 (0.16 mag median). The AE outperforms the VAE by ~0.2 mag and VQ-VAE by ~0.1 mag at every dimension.
+
+### Downstream classification from latent vectors
+
+Three decoder types are compared: linear probe (logistic regression), 2-layer MLP, and 3-layer MLP. All decoders are trained on frozen latent vectors from the best AE checkpoint.
+
+#### Coarse 5-class accuracy (SNIa / SNcc / Cataclysmic / AGN / TDE)
+
+| Dim | Bytes | Linear acc | Linear bal | MLP-2 acc | MLP-2 bal | MLP-3 acc | MLP-3 bal |
+|-----|-------|-----------|-----------|----------|----------|----------|----------|
+| 2 | 8B | 76.4% | 36.6% | 68.3% | 54.7% | 69.6% | **55.0%** |
+| 8 | 32B | 82.6% | 49.6% | 81.4% | 70.2% | 82.4% | **70.7%** |
+| 32 | 128B | 85.8% | 55.8% | 84.9% | **73.3%** | 85.5% | 73.1% |
+| **64** | **256B** | **86.5%** | **57.9%** | **85.2%** | **71.8%** | **86.2%** | **72.3%** |
+| 256 | 1024B | 88.4% | 64.7% | 86.9% | **74.1%** | 86.1% | 73.3% |
+| 512 | 2048B | 88.2% | 66.6% | 86.4% | 74.2% | 86.9% | **76.2%** |
+| 1024 | 4096B | 88.5% | 63.8% | 87.6% | **78.5%** | 87.8% | 76.3% |
+
+The MLP decoders improve **balanced accuracy by 15-21 percentage points** over linear probes, critical for rare classes (TDE, SN subtypes).
+
+#### Architecture comparison — linear probe accuracy
+
+| Dim | Bytes | Compression | AE | VAE | VQ-VAE |
+|-----|-------|-------------|-----|-----|--------|
 | 2 | 8B | 900x | **76.4%** | 73.7% | 75.8% |
 | 4 | 16B | 450x | **79.4%** | 73.4% | 78.1% |
 | 8 | 32B | 225x | **82.6%** | 77.0% | 77.4% |
@@ -58,37 +93,19 @@ Sequences are padded to max length 257 and normalized using global training set 
 | 512 | 2048B | 3.5x | **88.2%** | 87.1% | 80.7% |
 | 1024 | 4096B | 1.8x | **88.5%** | 86.0% | 79.9% |
 
-#### Continuous reconstruction MSE (lower is better)
-
-| Dim | AE | VAE | VQ-VAE |
-|-----|-----|-----|--------|
-| 2 | **0.38** | 0.51 | 0.38 |
-| 8 | **0.29** | 0.63 | 0.39 |
-| 32 | **0.27** | 0.63 | 0.39 |
-| 64 | **0.26** | 0.64 | 0.38 |
-| 256 | **0.26** | 0.63 | 0.38 |
-| 1024 | **0.26** | 0.62 | 0.38 |
-
-#### Band reconstruction accuracy (3-class: g/r/i)
-
-| Dim | AE | VAE | VQ-VAE |
-|-----|-----|-----|--------|
-| 2 | 55.3% | 52.7% | 56.1% |
-| 64 | 62.7% | 57.1% | 56.2% |
-| 256 | **63.0%** | 57.6% | 56.3% |
-| 1024 | **63.2%** | 57.4% | 56.5% |
-
 ### Key findings
 
 1. **The plain autoencoder (AE) wins across the board** — better reconstruction AND better downstream classification at every latent dimension. The KL penalty in the VAE hurts both metrics without compensating benefit for compression.
 
-2. **Classification saturates at dim ~256-512** (~88.5% coarse accuracy). Reconstruction saturates earlier at dim ~64 (MSE ~0.26).
+2. **Reconstruction saturates at dim ~64** (0.16 mag median, 2.5 day time error). Classification continues improving to dim ~512.
 
-3. **VQ-VAE plateaus at ~80%** regardless of latent dimension. The 512-entry codebook is the true bottleneck — all dims map to ~95 active codes. A multi-code or hierarchical VQ approach would be needed to improve this.
+3. **MLP decoders dramatically improve balanced accuracy** (+15-21pp over linear probes), especially for rare classes. A simple 2-layer MLP is sufficient.
 
-4. **The sweet spot is AE dim=64**: 86.5% coarse accuracy at 28x compression (256 bytes/alert). Going to dim=256 gains 2pp at 4x more bytes.
+4. **VQ-VAE plateaus at ~80%** regardless of latent dimension. The 512-entry codebook is the true bottleneck — all dims map to ~95 active codes. A multi-code or hierarchical VQ approach would be needed to improve this.
 
-5. **Context vs the full XGBoost pipeline**: the AE at dim=256 (88.4%) approaches the XGBoost catalog-only baseline (65.3%) + fitting features (94.4%) using only raw photometry, no engineered features or catalog cross-matches. Adding alert metadata and catalog features to the encoder input is expected to close much of this gap.
+5. **The sweet spot is AE dim=64**: 0.16 mag reconstruction, 73% balanced classification accuracy with MLP decoder, at 28x compression (256 bytes/alert).
+
+6. **Context vs the full XGBoost pipeline**: the AE at dim=256 (88.4% accuracy) approaches the full XGBoost (94.4%) using only raw photometry — no engineered features or catalog cross-matches. Adding alert metadata is expected to close much of this gap.
 
 ### Classes
 
@@ -135,12 +152,18 @@ python train.py \
     --epochs 200
 ```
 
-### Linear probe evaluation
+### Evaluation
 
 ```bash
-python linear_probe.py \
-    --runs-dir ../runs \
-    --output-dir ../analysis
+# Linear probe classification
+python linear_probe.py --runs-dir ../runs --output-dir ../analysis
+
+# MLP decoder classifiers (linear + 2-layer + 3-layer MLP)
+python mlp_decoder.py --runs-dir ../runs --output-dir ../analysis/decoders
+
+# Physical-unit reconstruction metrics + light curve plots
+python evaluate_physical.py --runs-dir ../runs --data-dir /path/to/photo_events \
+    --output-dir ../analysis/physical
 ```
 
 ### SLURM (OzSTAR)
@@ -148,6 +171,16 @@ python linear_probe.py \
 ```bash
 # Full AE vs VAE vs VQ-VAE sweep (30 models, ~8 hours on A100)
 sbatch slurm/sweep_all_modes.sh
+
+# Evaluation (physical metrics + MLP decoders, ~45 min)
+sbatch slurm/evaluate.sh
+```
+
+### Tests
+
+```bash
+pip install pytest pytest-cov
+pytest tests/ -v
 ```
 
 ## Architecture
@@ -156,18 +189,18 @@ sbatch slurm/sweep_all_modes.sh
 Encoder:
   Linear(7, 128) + Time2Vec(128) + CLS token
   TransformerEncoder(4 layers, 8 heads, 512 FFN, dropout=0.3)
-  CLS token → LayerNorm → bottleneck
+  CLS token -> LayerNorm -> bottleneck
 
 Bottleneck (mode-dependent):
-  AE:    Linear(128, latent_dim)
-  VAE:   Linear(128, latent_dim) × 2 → (mu, logvar) → reparameterize
-  VQ-VAE: Linear(128, latent_dim) → VectorQuantizer(512 codes, EMA)
+  AE:     Linear(128, latent_dim)
+  VAE:    Linear(128, latent_dim) x 2 -> (mu, logvar) -> reparameterize
+  VQ-VAE: Linear(128, latent_dim) -> VectorQuantizer(512 codes, EMA)
 
 Decoder:
-  Linear(latent_dim, 128) → broadcast to 257 positions + learned pos embed
+  Linear(latent_dim, 128) -> broadcast to 257 positions + learned pos embed
   TransformerEncoder(2 layers, 8 heads, 512 FFN, dropout=0.2)
-  head_cont: Linear(128, 4)  → continuous channels (MSE loss)
-  head_band: Linear(128, 3)  → band logits (CE loss)
+  head_cont: Linear(128, 4)  -> continuous channels (MSE loss)
+  head_band: Linear(128, 3)  -> band logits (CE loss)
 ```
 
 Parameters: ~1.2M (dim=2) to ~1.6M (dim=1024).
@@ -175,14 +208,24 @@ Parameters: ~1.2M (dim=2) to ~1.6M (dim=1024).
 ## File structure
 
 ```
-alert-compression/
+rtf/
 ├── src/
-│   ├── model.py          # LightCurveCompressor (AE/VAE/VQ-VAE)
-│   ├── dataset.py         # PhotoNPZDataset + collate_fn
-│   ├── train.py           # Training loop + latent dim sweep
-│   └── linear_probe.py    # Downstream classification evaluation
+│   ├── model.py              # LightCurveCompressor (AE/VAE/VQ-VAE)
+│   ├── dataset.py            # PhotoNPZDataset + collate_fn
+│   ├── train.py              # Training loop + latent dim sweep
+│   ├── linear_probe.py       # Linear probe classification
+│   ├── mlp_decoder.py        # MLP decoder classifiers
+│   └── evaluate_physical.py  # Physical-unit metrics + light curve plots
+├── tests/
+│   ├── conftest.py           # Shared fixtures
+│   ├── test_model.py         # Model unit tests (61 tests)
+│   ├── test_dataset.py       # Dataset tests
+│   └── test_training.py      # Integration tests
 ├── slurm/
-│   └── sweep_all_modes.sh # Full comparison job
-├── runs/                  # Trained models + embeddings (per run)
-└── analysis/              # Linear probe results + plots
+│   ├── sweep_all_modes.sh    # Full architecture comparison
+│   └── evaluate.sh           # Evaluation job
+├── .github/workflows/ci.yml  # GitHub Actions CI
+├── pyproject.toml
+├── runs/                     # Trained models + embeddings (gitignored)
+└── analysis/                 # Results + plots (gitignored)
 ```

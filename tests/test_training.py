@@ -1,7 +1,5 @@
 """Integration tests: training loop, embedding extraction, linear probe."""
 
-import json
-
 import numpy as np
 import pytest
 import torch
@@ -46,7 +44,7 @@ class TestTrainingLoop:
             losses.append(epoch_loss / n)
 
         # Loss should not be NaN/Inf
-        assert all(np.isfinite(l) for l in losses)
+        assert all(np.isfinite(v) for v in losses)
         # Loss should decrease or at least not explode
         assert losses[-1] < losses[0] * 2
 

@@ -1,6 +1,5 @@
 """Tests for PhotoNPZDataset and collate_fn."""
 
-import numpy as np
 import pytest
 import torch
 
