@@ -2,17 +2,22 @@
 Train light curve compression models (AE / VAE / VQ-VAE) with latent dim sweep.
 
 Usage:
+    # Photometry only (from pre-processed NPZ):
     python src/train.py \
         --data-dir /fred/oz480/mcoughli/AppleCider/photo_events \
         --output-dir runs \
-        --mode vae \
-        --latent-dims 32 64 128 256 \
-        --epochs 200
+        --mode ae \
+        --latent-dims 64 256
 
-    # Compare all three modes at a fixed dim:
-    python src/train.py --mode ae --latent-dims 64 ...
-    python src/train.py --mode vae --latent-dims 64 ...
-    python src/train.py --mode vqvae --latent-dims 64 --num-codes 512 ...
+    # Photometry + alert metadata (from raw alerts.npy):
+    python src/train.py \
+        --alert-dir /fred/oz480/mcoughli/data_ztf \
+        --splits /fred/oz480/mcoughli/AppleCider/photo_events/splits.csv \
+        --labels-dir /fred/oz480/mcoughli/AppleCider/photo_events \
+        --output-dir runs \
+        --mode ae \
+        --use-metadata \
+        --latent-dims 64 256
 """
 
 import argparse
@@ -24,7 +29,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from dataset import PhotoNPZDataset, collate_fn
+from dataset import AlertDataset, MetaNPZDataset, PhotoNPZDataset, collate_fn
 from model import LightCurveCompressor
 
 
@@ -114,17 +119,39 @@ def train_model(
     epochs=200, batch_size=128, lr=1e-4, target_beta=1.0,
     d_model=128, horizon=100.0, device="cuda", num_workers=4,
     num_codes=512, commitment_cost=0.25,
+    alert_dir=None, splits_path=None, labels_dir=None, use_metadata=False,
 ):
-    run_dir = os.path.join(output_dir, f"{mode}_dim{latent_dim}")
+    suffix = "_meta" if use_metadata else ""
+    run_dir = os.path.join(output_dir, f"{mode}_dim{latent_dim}{suffix}")
     os.makedirs(run_dir, exist_ok=True)
 
-    stats_path = os.path.join(data_dir, "feature_stats_day100.npz")
-    if not os.path.exists(stats_path):
-        stats_path = None
+    # Choose dataset:
+    #   - AlertDataset: raw alerts.npy (slow, for testing)
+    #   - MetaNPZDataset: pre-processed NPZ with metadata (fast, from preprocess_alerts.py)
+    #   - PhotoNPZDataset: legacy NPZ with photometry only
+    if alert_dir is not None:
+        train_ds = AlertDataset(alert_dir, splits_path, "train", labels_dir,
+                                use_metadata=use_metadata, horizon=horizon)
+        val_ds = AlertDataset(alert_dir, splits_path, "val", labels_dir,
+                              use_metadata=use_metadata, horizon=horizon)
+        test_ds = AlertDataset(alert_dir, splits_path, "test", labels_dir,
+                               use_metadata=use_metadata, horizon=horizon)
+    elif use_metadata:
+        train_ds = MetaNPZDataset(os.path.join(data_dir, "train"))
+        val_ds = MetaNPZDataset(os.path.join(data_dir, "val"))
+        test_ds = MetaNPZDataset(os.path.join(data_dir, "test"))
+    else:
+        stats_path = os.path.join(data_dir, "feature_stats_day100.npz")
+        if not os.path.exists(stats_path):
+            stats_path = None
+        train_ds = PhotoNPZDataset(os.path.join(data_dir, "train"), stats_path,
+                                   horizon=horizon)
+        val_ds = PhotoNPZDataset(os.path.join(data_dir, "val"), stats_path,
+                                 horizon=horizon)
+        test_ds = PhotoNPZDataset(os.path.join(data_dir, "test"), stats_path,
+                                  horizon=horizon)
 
-    train_ds = PhotoNPZDataset(os.path.join(data_dir, "train"), stats_path, horizon=horizon)
-    val_ds = PhotoNPZDataset(os.path.join(data_dir, "val"), stats_path, horizon=horizon)
-    test_ds = PhotoNPZDataset(os.path.join(data_dir, "test"), stats_path, horizon=horizon)
+    in_channels = train_ds.in_channels
 
     pin = device != "cpu"
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
@@ -135,7 +162,7 @@ def train_model(
                              collate_fn=collate_fn, num_workers=num_workers, pin_memory=pin)
 
     model = LightCurveCompressor(
-        mode=mode, latent_dim=latent_dim, d_model=d_model,
+        mode=mode, latent_dim=latent_dim, in_channels=in_channels, d_model=d_model,
         num_codes=num_codes, commitment_cost=commitment_cost,
     ).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-2)
@@ -144,7 +171,7 @@ def train_model(
     n_params = sum(p.numel() for p in model.parameters())
     comp = model.compression_info()
     print(f"\n{'='*60}")
-    print(f"Training {mode.upper()}: latent_dim={latent_dim}, d_model={d_model}")
+    print(f"Training {mode.upper()}: latent_dim={latent_dim}, in_channels={in_channels}, d_model={d_model}")
     print(f"Parameters: {n_params:,}")
     print(f"Compression: {comp['compression_ratio']:.1f}x ({comp['compressed_bytes']}B/alert)")
     print(f"Train: {len(train_ds)}, Val: {len(val_ds)}, Test: {len(test_ds)}")
@@ -200,7 +227,8 @@ def train_model(
 
     # Save summary
     summary = {
-        "mode": mode, "latent_dim": latent_dim, "d_model": d_model,
+        "mode": mode, "latent_dim": latent_dim, "in_channels": in_channels,
+        "d_model": d_model, "use_metadata": use_metadata,
         "n_params": n_params, "best_epoch": best_epoch,
         "target_beta": target_beta if mode == "vae" else None,
         "num_codes": num_codes if mode == "vqvae" else None,
@@ -222,7 +250,8 @@ def train_model(
 
 def main():
     parser = argparse.ArgumentParser(description="Train light curve compression models")
-    parser.add_argument("--data-dir", required=True)
+    parser.add_argument("--data-dir", default=None,
+                        help="Path to photo_events/ (for PhotoNPZDataset)")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--mode", choices=["ae", "vae", "vqvae"], default="vae")
     parser.add_argument("--latent-dims", nargs="+", type=int, default=[32, 64, 128, 256])
@@ -236,6 +265,14 @@ def main():
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--num-codes", type=int, default=512, help="Codebook size (VQ-VAE only)")
     parser.add_argument("--commitment-cost", type=float, default=0.25, help="VQ commitment cost")
+    # Alert metadata options
+    parser.add_argument("--alert-dir", default=None,
+                        help="Path to data_ztf/ with raw alerts (enables AlertDataset)")
+    parser.add_argument("--splits", default=None, help="Path to splits.csv (required with --alert-dir)")
+    parser.add_argument("--labels-dir", default=None,
+                        help="Path to dir with {split}/{obj_id}.npz labels (required with --alert-dir)")
+    parser.add_argument("--use-metadata", action="store_true",
+                        help="Include alert metadata in encoder input")
     args = parser.parse_args()
 
     all_summaries = []
@@ -247,6 +284,8 @@ def main():
             target_beta=args.beta, d_model=args.d_model, horizon=args.horizon,
             device=args.device, num_workers=args.num_workers,
             num_codes=args.num_codes, commitment_cost=args.commitment_cost,
+            alert_dir=args.alert_dir, splits_path=args.splits,
+            labels_dir=args.labels_dir, use_metadata=args.use_metadata,
         )
         all_summaries.append(s)
 

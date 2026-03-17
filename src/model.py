@@ -118,6 +118,7 @@ class LightCurveCompressor(nn.Module):
         self,
         mode: str = "vae",
         latent_dim: int = 32,
+        in_channels: int = 7,
         d_model: int = 128,
         n_heads: int = 8,
         enc_layers: int = 4,
@@ -135,12 +136,13 @@ class LightCurveCompressor(nn.Module):
         assert mode in ("ae", "vae", "vqvae"), f"Unknown mode: {mode}"
         self.mode = mode
         self.latent_dim = latent_dim
+        self.in_channels = in_channels
         self.d_model = d_model
         self.max_len = max_len
         self.free_bits = free_bits
 
         # --- Encoder ---
-        self.in_proj = nn.Linear(7, d_model)
+        self.in_proj = nn.Linear(in_channels, d_model)
         self.time2vec = Time2Vec(d_model)
         self.cls_tok = nn.Parameter(torch.zeros(1, 1, d_model))
         nn.init.normal_(self.cls_tok, std=0.02)
@@ -350,7 +352,7 @@ class LightCurveCompressor(nn.Module):
 
     def compression_info(self) -> dict:
         """Return compression statistics for this model configuration."""
-        raw_size = 7 * self.max_len * 4  # float32
+        raw_size = self.in_channels * self.max_len * 4  # float32
         if self.mode == "vqvae":
             import math
             bits_per_alert = math.ceil(math.log2(self.vq.num_codes))
@@ -362,5 +364,6 @@ class LightCurveCompressor(nn.Module):
             "compressed_bytes": compressed_bytes,
             "compression_ratio": raw_size / compressed_bytes,
             "latent_dim": self.latent_dim,
+            "in_channels": self.in_channels,
             "mode": self.mode,
         }
