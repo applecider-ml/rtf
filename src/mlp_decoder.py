@@ -35,8 +35,16 @@ from torch.utils.data import DataLoader, TensorDataset
 
 COARSE_NAMES = ["SNIa", "SNcc", "Cataclysmic", "AGN", "TDE"]
 FINE_NAMES = [
-    "SN Ia", "SN Ib", "SN Ic", "SN II", "SN IIP",
-    "SN IIn", "SN IIb", "Cataclysmic", "AGN", "TDE",
+    "SN Ia",
+    "SN Ib",
+    "SN Ic",
+    "SN II",
+    "SN IIP",
+    "SN IIn",
+    "SN IIb",
+    "Cataclysmic",
+    "AGN",
+    "TDE",
 ]
 
 
@@ -48,12 +56,14 @@ class MLPClassifier(nn.Module):
         layers = []
         prev = input_dim
         for h in hidden_dims:
-            layers.extend([
-                nn.Linear(prev, h),
-                nn.BatchNorm1d(h),
-                nn.ReLU(),
-                nn.Dropout(dropout),
-            ])
+            layers.extend(
+                [
+                    nn.Linear(prev, h),
+                    nn.BatchNorm1d(h),
+                    nn.ReLU(),
+                    nn.Dropout(dropout),
+                ]
+            )
             prev = h
         layers.append(nn.Linear(prev, num_classes))
         self.net = nn.Sequential(*layers)
@@ -62,8 +72,19 @@ class MLPClassifier(nn.Module):
         return self.net(x)
 
 
-def train_mlp(X_train, y_train, X_val, y_val, num_classes, hidden_dims=(256, 128),
-              dropout=0.3, epochs=100, lr=1e-3, batch_size=256, device="cpu"):
+def train_mlp(
+    X_train,
+    y_train,
+    X_val,
+    y_val,
+    num_classes,
+    hidden_dims=(256, 128),
+    dropout=0.3,
+    epochs=100,
+    lr=1e-3,
+    batch_size=256,
+    device="cpu",
+):
     """Train an MLP classifier on embeddings."""
     # Standardize
     scaler = StandardScaler()
@@ -203,45 +224,71 @@ def evaluate_run(run_path, output_dir, device="cpu"):
 
         # Linear probe
         lp = linear_probe(X_train, y_train, X_test, y_test)
-        print(f"    Linear:     acc={lp['accuracy']:.3f}  bal={lp['balanced_accuracy']:.3f}  auc={lp['roc_auc']:.3f}")
+        print(
+            f"    Linear:     acc={lp['accuracy']:.3f}  bal={lp['balanced_accuracy']:.3f}  auc={lp['roc_auc']:.3f}"
+        )
 
         # 2-layer MLP
         mlp2, scaler2 = train_mlp(
-            X_train[tr_idx], y_train[tr_idx],
-            X_train[val_idx], y_train[val_idx],
-            num_classes, hidden_dims=(256, 128), dropout=0.3,
-            epochs=100, device=device,
+            X_train[tr_idx],
+            y_train[tr_idx],
+            X_train[val_idx],
+            y_train[val_idx],
+            num_classes,
+            hidden_dims=(256, 128),
+            dropout=0.3,
+            epochs=100,
+            device=device,
         )
         res2 = evaluate_classifier(mlp2, scaler2, X_test, y_test, num_classes, device)
-        print(f"    MLP-2:      acc={res2['accuracy']:.3f}  bal={res2['balanced_accuracy']:.3f}  auc={res2['roc_auc']:.3f}")
+        print(
+            f"    MLP-2:      acc={res2['accuracy']:.3f}  bal={res2['balanced_accuracy']:.3f}  auc={res2['roc_auc']:.3f}"
+        )
 
         # 3-layer MLP
         mlp3, scaler3 = train_mlp(
-            X_train[tr_idx], y_train[tr_idx],
-            X_train[val_idx], y_train[val_idx],
-            num_classes, hidden_dims=(512, 256, 128), dropout=0.4,
-            epochs=150, device=device,
+            X_train[tr_idx],
+            y_train[tr_idx],
+            X_train[val_idx],
+            y_train[val_idx],
+            num_classes,
+            hidden_dims=(512, 256, 128),
+            dropout=0.4,
+            epochs=150,
+            device=device,
         )
         res3 = evaluate_classifier(mlp3, scaler3, X_test, y_test, num_classes, device)
-        print(f"    MLP-3:      acc={res3['accuracy']:.3f}  bal={res3['balanced_accuracy']:.3f}  auc={res3['roc_auc']:.3f}")
+        print(
+            f"    MLP-3:      acc={res3['accuracy']:.3f}  bal={res3['balanced_accuracy']:.3f}  auc={res3['roc_auc']:.3f}"
+        )
 
         # Classification report for best model
-        best = max([("linear", lp), ("mlp2", res2), ("mlp3", res3)],
-                   key=lambda x: x[1]["balanced_accuracy"])
+        best = max(
+            [("linear", lp), ("mlp2", res2), ("mlp3", res3)],
+            key=lambda x: x[1]["balanced_accuracy"],
+        )
         best_name, best_res = best
 
         results[f"{task}_linear"] = lp
-        results[f"{task}_mlp2"] = {k: v for k, v in res2.items()
-                                   if k not in ("predictions", "probabilities")}
-        results[f"{task}_mlp3"] = {k: v for k, v in res3.items()
-                                   if k not in ("predictions", "probabilities")}
+        results[f"{task}_mlp2"] = {
+            k: v for k, v in res2.items() if k not in ("predictions", "probabilities")
+        }
+        results[f"{task}_mlp3"] = {
+            k: v for k, v in res3.items() if k not in ("predictions", "probabilities")
+        }
         results[f"{task}_best"] = best_name
 
         # Save detailed report for best
         if "predictions" in best_res:
-            report = classification_report(y_test, best_res["predictions"],
-                                           target_names=class_names, output_dict=True)
-            with open(os.path.join(run_out, f"report_{task}_{best_name}.json"), "w") as f:
+            report = classification_report(
+                y_test,
+                best_res["predictions"],
+                target_names=class_names,
+                output_dict=True,
+            )
+            with open(
+                os.path.join(run_out, f"report_{task}_{best_name}.json"), "w"
+            ) as f:
                 json.dump(report, f, indent=2)
 
     with open(os.path.join(run_out, "decoder_results.json"), "w") as f:
@@ -255,22 +302,27 @@ def main():
     parser.add_argument("--runs-dir", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--models", nargs="*", default=None)
-    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument(
+        "--device", default="cuda" if torch.cuda.is_available() else "cpu"
+    )
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    run_dirs = args.models or sorted([
-        d for d in os.listdir(args.runs_dir)
-        if os.path.isdir(os.path.join(args.runs_dir, d))
-    ])
+    run_dirs = args.models or sorted(
+        [
+            d
+            for d in os.listdir(args.runs_dir)
+            if os.path.isdir(os.path.join(args.runs_dir, d))
+        ]
+    )
 
     all_results = []
     for d in run_dirs:
         run_path = os.path.join(args.runs_dir, d) if "/" not in d else d
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Decoders for {d}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         result = evaluate_run(run_path, args.output_dir, args.device)
         if result:
             all_results.append(result)
@@ -279,23 +331,27 @@ def main():
         json.dump(all_results, f, indent=2, default=str)
 
     # Summary table
-    print(f"\n{'='*100}")
+    print(f"\n{'=' * 100}")
     print("DECODER COMPARISON (coarse 5-class)")
-    print(f"{'='*100}")
-    print(f"{'mode':>6} {'dim':>5} "
-          f"{'lin_acc':>7} {'lin_bal':>7} "
-          f"{'mlp2_acc':>8} {'mlp2_bal':>8} "
-          f"{'mlp3_acc':>8} {'mlp3_bal':>8} {'best':>6}")
+    print(f"{'=' * 100}")
+    print(
+        f"{'mode':>6} {'dim':>5} "
+        f"{'lin_acc':>7} {'lin_bal':>7} "
+        f"{'mlp2_acc':>8} {'mlp2_bal':>8} "
+        f"{'mlp3_acc':>8} {'mlp3_bal':>8} {'best':>6}"
+    )
     print("-" * 75)
     for r in sorted(all_results, key=lambda x: (x["mode"], x["latent_dim"])):
         lp = r["coarse_linear"]
         m2 = r["coarse_mlp2"]
         m3 = r["coarse_mlp3"]
-        print(f"{r['mode']:>6} {r['latent_dim']:5d} "
-              f"{lp['accuracy']:7.3f} {lp['balanced_accuracy']:7.3f} "
-              f"{m2['accuracy']:8.3f} {m2['balanced_accuracy']:8.3f} "
-              f"{m3['accuracy']:8.3f} {m3['balanced_accuracy']:8.3f} "
-              f"{r['coarse_best']:>6}")
+        print(
+            f"{r['mode']:>6} {r['latent_dim']:5d} "
+            f"{lp['accuracy']:7.3f} {lp['balanced_accuracy']:7.3f} "
+            f"{m2['accuracy']:8.3f} {m2['balanced_accuracy']:8.3f} "
+            f"{m3['accuracy']:8.3f} {m3['balanced_accuracy']:8.3f} "
+            f"{r['coarse_best']:>6}"
+        )
 
 
 if __name__ == "__main__":

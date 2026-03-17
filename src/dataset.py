@@ -24,32 +24,41 @@ N_CONT_BASE = 4
 # Alert metadata fields to extract from each alert candidate.
 # These are the most informative fields for transient classification.
 ALERT_META_KEYS = [
-    "sgscore1", "sgscore2",      # star/galaxy scores for PS1 neighbors
-    "distpsnr1", "distpsnr2",    # distance to nearest PS1 sources (arcsec)
-    "nmtchps",                    # number of PS1 matches
-    "sharpnr",                    # sharpness of nearest source
-    "scorr",                      # detection significance (S/N)
-    "diffmaglim",                 # 5-sigma limiting mag
-    "sky",                        # local sky background
-    "ndethist",                   # cumulative detections
-    "ncovhist",                   # times field observed
-    "sigmapsf",                   # PSF mag uncertainty
-    "chinr",                      # chi^2 of nearest PS1 source
-    "classtar",                   # SExtractor star/galaxy
-    "rb",                         # Real/Bogus score
-    "chipsf",                     # chi^2 of PSF fit
-    "distnr",                     # distance to nearest ref source (arcsec)
-    "magnr",                      # mag of nearest ref source
-    "fwhm",                       # PSF FWHM
-    "srmag1", "sgmag1", "simag1", "szmag1",  # PS1 mags of nearest source
-    "srmag2", "sgmag2", "simag2", "szmag2",  # PS1 mags of 2nd nearest
-    "clrcoeff", "clrcounc",      # color coefficients
-    "zpclrcov",                   # zeropoint color covariance
+    "sgscore1",
+    "sgscore2",  # star/galaxy scores for PS1 neighbors
+    "distpsnr1",
+    "distpsnr2",  # distance to nearest PS1 sources (arcsec)
+    "nmtchps",  # number of PS1 matches
+    "sharpnr",  # sharpness of nearest source
+    "scorr",  # detection significance (S/N)
+    "diffmaglim",  # 5-sigma limiting mag
+    "sky",  # local sky background
+    "ndethist",  # cumulative detections
+    "ncovhist",  # times field observed
+    "sigmapsf",  # PSF mag uncertainty
+    "chinr",  # chi^2 of nearest PS1 source
+    "classtar",  # SExtractor star/galaxy
+    "rb",  # Real/Bogus score
+    "chipsf",  # chi^2 of PSF fit
+    "distnr",  # distance to nearest ref source (arcsec)
+    "magnr",  # mag of nearest ref source
+    "fwhm",  # PSF FWHM
+    "srmag1",
+    "sgmag1",
+    "simag1",
+    "szmag1",  # PS1 mags of nearest source
+    "srmag2",
+    "sgmag2",
+    "simag2",
+    "szmag2",  # PS1 mags of 2nd nearest
+    "clrcoeff",
+    "clrcounc",  # color coefficients
+    "zpclrcov",  # zeropoint color covariance
 ]
 
 # Total input channels: 4 base + 3 one-hot band + len(ALERT_META_KEYS) metadata
 N_META = len(ALERT_META_KEYS)
-IN_CHANNELS_BASE = 7       # dt, dt_prev, logflux, logflux_err, band_g, band_r, band_i
+IN_CHANNELS_BASE = 7  # dt, dt_prev, logflux, logflux_err, band_g, band_r, band_i
 IN_CHANNELS_META = 7 + N_META  # base + alert metadata
 
 
@@ -125,8 +134,13 @@ class AlertDataset(Dataset):
             return self._load_item(idx)
         except Exception:
             x = torch.zeros(1, self.in_channels)
-            return {"x": x, "label_fine": 0, "label_coarse": 0,
-                    "obj_id": "BAD", "seq_len": 1}
+            return {
+                "x": x,
+                "label_fine": 0,
+                "label_coarse": 0,
+                "obj_id": "BAD",
+                "seq_len": 1,
+            }
 
     def _load_item(self, idx):
         oid = self.obj_ids[idx]
@@ -142,8 +156,13 @@ class AlertDataset(Dataset):
         L = len(alerts)
         if L == 0:
             x = torch.zeros(1, self.in_channels)
-            return {"x": x, "label_fine": label, "label_coarse": self.COARSE_MAP.get(label, 0),
-                    "obj_id": oid, "seq_len": 1}
+            return {
+                "x": x,
+                "label_fine": label,
+                "label_coarse": self.COARSE_MAP.get(label, 0),
+                "obj_id": oid,
+                "seq_len": 1,
+            }
 
         # Time features
         dt = (jds - jds[0]).astype(np.float32)
@@ -161,11 +180,15 @@ class AlertDataset(Dataset):
         # Photometry
         fids = np.array([a["candidate"]["fid"] for a in alerts])
         magpsf = np.array([a["candidate"]["magpsf"] for a in alerts], dtype=np.float32)
-        sigmapsf = np.array([a["candidate"]["sigmapsf"] for a in alerts], dtype=np.float32)
+        sigmapsf = np.array(
+            [a["candidate"]["sigmapsf"] for a in alerts], dtype=np.float32
+        )
 
         # Convert mag to logflux: logflux = -0.4 * magpsf + const (we drop const, relative is fine)
         logflux = (-0.4 * magpsf).astype(np.float32)
-        logflux_err = (0.4 * sigmapsf * np.log(10) / np.log(10)).astype(np.float32)  # ~0.4 * sigmapsf
+        logflux_err = (0.4 * sigmapsf * np.log(10) / np.log(10)).astype(
+            np.float32
+        )  # ~0.4 * sigmapsf
 
         # Log-transform time
         log_dt = np.log1p(dt)
@@ -214,6 +237,7 @@ class AlertDataset(Dataset):
 # Pre-processed metadata NPZ dataset (from preprocess_alerts.py)
 # ---------------------------------------------------------------------------
 
+
 class MetaNPZDataset(Dataset):
     """
     Loads pre-processed NPZ files with photometry + metadata.
@@ -245,8 +269,13 @@ class MetaNPZDataset(Dataset):
             return self._load_item(idx)
         except Exception:
             x = torch.zeros(1, self.in_channels)
-            return {"x": x, "label_fine": 0, "label_coarse": 0,
-                    "obj_id": "BAD", "seq_len": 1}
+            return {
+                "x": x,
+                "label_fine": 0,
+                "label_coarse": 0,
+                "obj_id": "BAD",
+                "seq_len": 1,
+            }
 
     def _load_item(self, idx):
         npz = np.load(self.files[idx], allow_pickle=True)
@@ -268,6 +297,7 @@ class MetaNPZDataset(Dataset):
 # ---------------------------------------------------------------------------
 # Legacy dataset for pre-processed NPZ files (photometry only)
 # ---------------------------------------------------------------------------
+
 
 class PhotoNPZDataset(Dataset):
     """
@@ -322,8 +352,13 @@ class PhotoNPZDataset(Dataset):
             return self._load_item(idx)
         except Exception:
             x = torch.zeros(1, self.in_channels)
-            return {"x": x, "label_fine": 0, "label_coarse": 0,
-                    "obj_id": "BAD", "seq_len": 1}
+            return {
+                "x": x,
+                "label_fine": 0,
+                "label_coarse": 0,
+                "obj_id": "BAD",
+                "seq_len": 1,
+            }
 
     def _load_item(self, idx):
         npz = np.load(self.files[idx], allow_pickle=True)
@@ -367,6 +402,7 @@ class PhotoNPZDataset(Dataset):
 # ---------------------------------------------------------------------------
 # Collate function (shared by both datasets)
 # ---------------------------------------------------------------------------
+
 
 def collate_fn(batch):
     """Pad variable-length sequences to max length in batch."""

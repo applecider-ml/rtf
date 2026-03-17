@@ -42,9 +42,14 @@ def fake_npz_dir(tmp_path):
         data[:, 3] = np.random.uniform(-1, 2, L)  # logflux
         data[:, 4] = np.random.uniform(0.01, 0.3, L)  # logflux_err
         label = np.int64(np.random.randint(0, 10))
-        np.savez(tmp_path / f"ZTF_fake_{i:03d}.npz", data=data,
-                 columns=np.array(["dt", "dt_prev", "band_id", "logflux", "logflux_err", "c5", "c6"]),
-                 label=label)
+        np.savez(
+            tmp_path / f"ZTF_fake_{i:03d}.npz",
+            data=data,
+            columns=np.array(
+                ["dt", "dt_prev", "band_id", "logflux", "logflux_err", "c5", "c6"]
+            ),
+            label=label,
+        )
     return tmp_path
 
 
@@ -52,5 +57,7 @@ def fake_npz_dir(tmp_path):
 def fake_stats(tmp_path):
     """Create a fake feature_stats file."""
     stats_path = tmp_path / "feature_stats_day100.npz"
-    np.savez(stats_path, mean=np.zeros(4, dtype=np.float32), std=np.ones(4, dtype=np.float32))
+    np.savez(
+        stats_path, mean=np.zeros(4, dtype=np.float32), std=np.ones(4, dtype=np.float32)
+    )
     return str(stats_path)

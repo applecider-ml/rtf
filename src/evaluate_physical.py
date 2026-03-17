@@ -28,8 +28,16 @@ from model import LightCurveCompressor
 
 COARSE_NAMES = {0: "SNIa", 1: "SNcc", 2: "Cataclysmic", 3: "AGN", 4: "TDE"}
 FINE_NAMES = {
-    0: "SN Ia", 1: "SN Ib", 2: "SN Ic", 3: "SN II", 4: "SN IIP",
-    5: "SN IIn", 6: "SN IIb", 7: "Cataclysmic", 8: "AGN", 9: "TDE",
+    0: "SN Ia",
+    1: "SN Ib",
+    2: "SN Ic",
+    3: "SN II",
+    4: "SN IIP",
+    5: "SN IIn",
+    6: "SN IIb",
+    7: "Cataclysmic",
+    8: "AGN",
+    9: "TDE",
 }
 BAND_NAMES = {0: "g", 1: "r", 2: "i"}
 BAND_COLORS = {0: "#1f77b4", 1: "#d62728", 2: "#ff7f0e"}
@@ -39,7 +47,9 @@ def load_stats(data_dir):
     """Load normalization stats and return (mean, std) as flat 1D arrays."""
     path = os.path.join(data_dir, "feature_stats_day100.npz")
     st = np.load(path)
-    return st["mean"].flatten().astype(np.float32), st["std"].flatten().astype(np.float32)
+    return st["mean"].flatten().astype(np.float32), st["std"].flatten().astype(
+        np.float32
+    )
 
 
 def denormalize_batch(x_norm, mean, std):
@@ -55,7 +65,9 @@ def denormalize_batch(x_norm, mean, std):
         logflux_err: (B, L) log10(flux) uncertainty
         band: (B, L) integer band index
     """
-    cont = x_norm[..., :4].numpy() if isinstance(x_norm, torch.Tensor) else x_norm[..., :4]
+    cont = (
+        x_norm[..., :4].numpy() if isinstance(x_norm, torch.Tensor) else x_norm[..., :4]
+    )
     # Undo normalization
     cont_phys = cont * std + mean
     # Undo log1p for time channels
@@ -101,7 +113,9 @@ def compute_physical_metrics(model, loader, mean, std, device):
 
         # Denormalize both
         dt_orig, mag_orig, magerr_orig, band_orig = denormalize_batch(x_orig, mean, std)
-        dt_recon, mag_recon, magerr_recon, band_recon = denormalize_batch(x_recon, mean, std)
+        dt_recon, mag_recon, magerr_recon, band_recon = denormalize_batch(
+            x_recon, mean, std
+        )
 
         B = x.shape[0]
         for i in range(B):
@@ -121,24 +135,27 @@ def compute_physical_metrics(model, loader, mean, std, device):
                 if mask.sum() > 0:
                     per_band_mag[BAND_NAMES[b_id]] = float(mag_residual[mask].mean())
 
-            all_results.append({
-                "obj_id": batch["obj_ids"][i],
-                "label_fine": int(labels_fine[i]),
-                "label_coarse": int(labels_coarse[i]),
-                "n_obs": int(n),
-                "mag_residual_mean": float(mag_residual.mean()),
-                "mag_residual_median": float(np.median(mag_residual)),
-                "mag_residual_90pct": float(np.percentile(mag_residual, 90)),
-                "dt_residual_mean_days": float(dt_residual.mean()),
-                "band_accuracy": float(band_correct),
-                "per_band_mag": per_band_mag,
-            })
+            all_results.append(
+                {
+                    "obj_id": batch["obj_ids"][i],
+                    "label_fine": int(labels_fine[i]),
+                    "label_coarse": int(labels_coarse[i]),
+                    "n_obs": int(n),
+                    "mag_residual_mean": float(mag_residual.mean()),
+                    "mag_residual_median": float(np.median(mag_residual)),
+                    "mag_residual_90pct": float(np.percentile(mag_residual, 90)),
+                    "dt_residual_mean_days": float(dt_residual.mean()),
+                    "band_accuracy": float(band_correct),
+                    "per_band_mag": per_band_mag,
+                }
+            )
 
     return all_results
 
 
-def plot_reconstructed_lightcurves(model, loader, mean, std, device, output_dir,
-                                   n_per_class=3):
+def plot_reconstructed_lightcurves(
+    model, loader, mean, std, device, output_dir, n_per_class=3
+):
     """Plot original vs reconstructed light curves for sample sources."""
     model.eval()
     os.makedirs(output_dir, exist_ok=True)
@@ -157,7 +174,9 @@ def plot_reconstructed_lightcurves(model, loader, mean, std, device, output_dir,
             cont_hat = cont_hat[:, :L]
             band_logits = band_logits[:, :L]
 
-            band_pred_oh = torch.nn.functional.one_hot(band_logits.argmax(-1), 3).float()
+            band_pred_oh = torch.nn.functional.one_hot(
+                band_logits.argmax(-1), 3
+            ).float()
             x_recon = torch.cat([cont_hat, band_pred_oh], dim=-1).cpu()
             x_orig = x.cpu()
             valid = ~pad_mask.cpu()
@@ -166,13 +185,15 @@ def plot_reconstructed_lightcurves(model, loader, mean, std, device, output_dir,
                 cls = int(batch["label_coarse"][i])
                 if len(samples_by_class[cls]) >= n_per_class:
                     continue
-                samples_by_class[cls].append({
-                    "obj_id": batch["obj_ids"][i],
-                    "x_orig": x_orig[i],
-                    "x_recon": x_recon[i],
-                    "valid": valid[i],
-                    "label_fine": int(batch["label_fine"][i]),
-                })
+                samples_by_class[cls].append(
+                    {
+                        "obj_id": batch["obj_ids"][i],
+                        "x_orig": x_orig[i],
+                        "x_recon": x_recon[i],
+                        "valid": valid[i],
+                        "label_fine": int(batch["label_fine"][i]),
+                    }
+                )
 
             if all(len(v) >= n_per_class for v in samples_by_class.values()):
                 break
@@ -196,8 +217,14 @@ def plot_reconstructed_lightcurves(model, loader, mean, std, device, output_dir,
             for b_id in range(3):
                 mask = band_o == b_id
                 if mask.any():
-                    ax1.scatter(dt_o[mask], mag_o[mask], c=BAND_COLORS[b_id],
-                                s=15, label=f"ZTF-{BAND_NAMES[b_id]}", alpha=0.8)
+                    ax1.scatter(
+                        dt_o[mask],
+                        mag_o[mask],
+                        c=BAND_COLORS[b_id],
+                        s=15,
+                        label=f"ZTF-{BAND_NAMES[b_id]}",
+                        alpha=0.8,
+                    )
             ax1.invert_yaxis()
             ax1.set_xlabel("Days since first detection")
             ax1.set_ylabel("Magnitude")
@@ -208,8 +235,14 @@ def plot_reconstructed_lightcurves(model, loader, mean, std, device, output_dir,
             for b_id in range(3):
                 mask = band_r == b_id
                 if mask.any():
-                    ax2.scatter(dt_r[mask], mag_r[mask], c=BAND_COLORS[b_id],
-                                s=15, label=f"ZTF-{BAND_NAMES[b_id]}", alpha=0.8)
+                    ax2.scatter(
+                        dt_r[mask],
+                        mag_r[mask],
+                        c=BAND_COLORS[b_id],
+                        s=15,
+                        label=f"ZTF-{BAND_NAMES[b_id]}",
+                        alpha=0.8,
+                    )
             ax2.invert_yaxis()
             ax2.set_xlabel("Days since first detection")
             ax2.set_title(f"Reconstructed ({FINE_NAMES.get(s['label_fine'], '?')})")
@@ -250,8 +283,12 @@ def summarize_results(results, output_dir):
             continue
         per_class[cls_name] = {
             "n": len(cls_results),
-            "mag_residual_mean": float(np.mean([r["mag_residual_mean"] for r in cls_results])),
-            "mag_residual_median": float(np.median([r["mag_residual_median"] for r in cls_results])),
+            "mag_residual_mean": float(
+                np.mean([r["mag_residual_mean"] for r in cls_results])
+            ),
+            "mag_residual_median": float(
+                np.median([r["mag_residual_median"] for r in cls_results])
+            ),
             "band_accuracy": float(np.mean([r["band_accuracy"] for r in cls_results])),
         }
     summary["per_class"] = per_class
@@ -259,7 +296,11 @@ def summarize_results(results, output_dir):
     # Per-band
     per_band = {}
     for band_name in ["g", "r", "i"]:
-        vals = [r["per_band_mag"].get(band_name) for r in results if band_name in r["per_band_mag"]]
+        vals = [
+            r["per_band_mag"].get(band_name)
+            for r in results
+            if band_name in r["per_band_mag"]
+        ]
         if vals:
             per_band[band_name] = {
                 "mag_residual_mean": float(np.mean(vals)),
@@ -271,50 +312,78 @@ def summarize_results(results, output_dir):
         json.dump(summary, f, indent=2)
 
     print(f"\n  Overall ({len(results)} sources):")
-    print(f"    Mag residual:  mean={summary['mag_residual_mean']:.3f}  "
-          f"median={summary['mag_residual_median']:.3f}  "
-          f"90th pct={summary['mag_residual_90pct']:.3f}")
+    print(
+        f"    Mag residual:  mean={summary['mag_residual_mean']:.3f}  "
+        f"median={summary['mag_residual_median']:.3f}  "
+        f"90th pct={summary['mag_residual_90pct']:.3f}"
+    )
     print(f"    Time residual: {summary['dt_residual_mean_days']:.2f} days")
     print(f"    Band accuracy: {summary['band_accuracy']:.1%}")
 
     print("\n  Per class:")
     for cls_name, m in per_class.items():
-        print(f"    {cls_name:15s} (n={m['n']:4d}): "
-              f"mag_resid={m['mag_residual_mean']:.3f}  band_acc={m['band_accuracy']:.1%}")
+        print(
+            f"    {cls_name:15s} (n={m['n']:4d}): "
+            f"mag_resid={m['mag_residual_mean']:.3f}  band_acc={m['band_accuracy']:.1%}"
+        )
 
     print("\n  Per band:")
     for band_name, m in per_band.items():
-        print(f"    ZTF-{band_name}: mag_resid={m['mag_residual_mean']:.3f} "
-              f"(n={m['n_sources_with_band']})")
+        print(
+            f"    ZTF-{band_name}: mag_resid={m['mag_residual_mean']:.3f} "
+            f"(n={m['n_sources_with_band']})"
+        )
 
     return summary
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Physical-unit reconstruction evaluation")
+    parser = argparse.ArgumentParser(
+        description="Physical-unit reconstruction evaluation"
+    )
     parser.add_argument("--runs-dir", required=True)
     parser.add_argument("--data-dir", required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--models", nargs="*", default=None,
-                        help="Specific run dirs to evaluate (default: all)")
+    parser.add_argument(
+        "--models",
+        nargs="*",
+        default=None,
+        help="Specific run dirs to evaluate (default: all)",
+    )
     parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
-    parser.add_argument("--plot-per-class", type=int, default=3,
-                        help="Number of light curve plots per class")
+    parser.add_argument(
+        "--device", default="cuda" if torch.cuda.is_available() else "cpu"
+    )
+    parser.add_argument(
+        "--plot-per-class",
+        type=int,
+        default=3,
+        help="Number of light curve plots per class",
+    )
     args = parser.parse_args()
 
     mean, std = load_stats(args.data_dir)
     stats_path = os.path.join(args.data_dir, "feature_stats_day100.npz")
 
-    test_ds = PhotoNPZDataset(os.path.join(args.data_dir, "test"), stats_path, horizon=100.0)
-    test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False,
-                             collate_fn=collate_fn, num_workers=4,
-                             pin_memory=(args.device != "cpu"))
+    test_ds = PhotoNPZDataset(
+        os.path.join(args.data_dir, "test"), stats_path, horizon=100.0
+    )
+    test_loader = DataLoader(
+        test_ds,
+        batch_size=args.batch_size,
+        shuffle=False,
+        collate_fn=collate_fn,
+        num_workers=4,
+        pin_memory=(args.device != "cpu"),
+    )
 
-    run_dirs = args.models or sorted([
-        d for d in os.listdir(args.runs_dir)
-        if os.path.isdir(os.path.join(args.runs_dir, d))
-    ])
+    run_dirs = args.models or sorted(
+        [
+            d
+            for d in os.listdir(args.runs_dir)
+            if os.path.isdir(os.path.join(args.runs_dir, d))
+        ]
+    )
 
     all_summaries = []
     for d in run_dirs:
@@ -329,12 +398,13 @@ def main():
 
         mode = run_summary["mode"]
         latent_dim = run_summary["latent_dim"]
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Evaluating {d}: {mode} dim={latent_dim}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         model = LightCurveCompressor(
-            mode=mode, latent_dim=latent_dim,
+            mode=mode,
+            latent_dim=latent_dim,
             num_codes=run_summary.get("num_codes", 512),
         ).to(args.device)
         model.load_state_dict(
@@ -353,7 +423,11 @@ def main():
 
         # Light curve plots
         plot_reconstructed_lightcurves(
-            model, test_loader, mean, std, args.device,
+            model,
+            test_loader,
+            mean,
+            std,
+            args.device,
             os.path.join(out_subdir, "lightcurves"),
             n_per_class=args.plot_per_class,
         )
@@ -362,17 +436,21 @@ def main():
     with open(os.path.join(args.output_dir, "all_physical_metrics.json"), "w") as f:
         json.dump(all_summaries, f, indent=2)
 
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print("PHYSICAL METRICS SUMMARY")
-    print(f"{'='*80}")
-    print(f"{'model':>15} {'dim':>5} {'mag_mean':>8} {'mag_med':>8} {'mag_90':>8} "
-          f"{'dt_days':>8} {'band%':>6}")
+    print(f"{'=' * 80}")
+    print(
+        f"{'model':>15} {'dim':>5} {'mag_mean':>8} {'mag_med':>8} {'mag_90':>8} "
+        f"{'dt_days':>8} {'band%':>6}"
+    )
     print("-" * 65)
     for s in sorted(all_summaries, key=lambda x: (x["mode"], x["latent_dim"])):
-        print(f"{s['mode']:>15} {s['latent_dim']:5d} "
-              f"{s['mag_residual_mean']:8.3f} {s['mag_residual_median']:8.3f} "
-              f"{s['mag_residual_90pct']:8.3f} {s['dt_residual_mean_days']:8.2f} "
-              f"{s['band_accuracy']:6.1%}")
+        print(
+            f"{s['mode']:>15} {s['latent_dim']:5d} "
+            f"{s['mag_residual_mean']:8.3f} {s['mag_residual_median']:8.3f} "
+            f"{s['mag_residual_90pct']:8.3f} {s['dt_residual_mean_days']:8.2f} "
+            f"{s['band_accuracy']:6.1%}"
+        )
 
 
 if __name__ == "__main__":

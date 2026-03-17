@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from dataset import PhotoNPZDataset, collate_fn
@@ -23,8 +24,9 @@ def small_loader(fake_npz_dir, fake_stats):
 class TestTrainingLoop:
     def test_loss_decreases(self, mode, small_loader):
         """Train for a few steps and verify loss moves."""
-        model = LightCurveCompressor(mode=mode, latent_dim=8, d_model=32,
-                                     n_heads=4, enc_layers=1, dec_layers=1)
+        model = LightCurveCompressor(
+            mode=mode, latent_dim=8, d_model=32, n_heads=4, enc_layers=1, dec_layers=1
+        )
         optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
         losses = []
@@ -49,8 +51,9 @@ class TestTrainingLoop:
         assert losses[-1] < losses[0] * 2
 
     def test_embedding_extraction(self, mode, small_loader):
-        model = LightCurveCompressor(mode=mode, latent_dim=8, d_model=32,
-                                     n_heads=4, enc_layers=1, dec_layers=1)
+        model = LightCurveCompressor(
+            mode=mode, latent_dim=8, d_model=32, n_heads=4, enc_layers=1, dec_layers=1
+        )
         model.eval()
         all_emb = []
         with torch.no_grad():
@@ -63,8 +66,9 @@ class TestTrainingLoop:
         assert emb.isfinite().all()
 
     def test_recon_error_extraction(self, mode, small_loader):
-        model = LightCurveCompressor(mode=mode, latent_dim=8, d_model=32,
-                                     n_heads=4, enc_layers=1, dec_layers=1)
+        model = LightCurveCompressor(
+            mode=mode, latent_dim=8, d_model=32, n_heads=4, enc_layers=1, dec_layers=1
+        )
         model.eval()
         all_err = []
         with torch.no_grad():
@@ -79,8 +83,9 @@ class TestTrainingLoop:
 
 def test_gradient_clipping(small_loader):
     """Verify gradient clipping doesn't break training."""
-    model = LightCurveCompressor(mode="vae", latent_dim=8, d_model=32,
-                                 n_heads=4, enc_layers=1, dec_layers=1)
+    model = LightCurveCompressor(
+        mode="vae", latent_dim=8, d_model=32, n_heads=4, enc_layers=1, dec_layers=1
+    )
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
 
     model.train()
@@ -99,8 +104,9 @@ def test_gradient_clipping(small_loader):
 
 def test_save_load_produces_same_embeddings(small_loader, tmp_path):
     """Save/load roundtrip preserves inference behavior."""
-    model = LightCurveCompressor(mode="ae", latent_dim=8, d_model=32,
-                                 n_heads=4, enc_layers=1, dec_layers=1)
+    model = LightCurveCompressor(
+        mode="ae", latent_dim=8, d_model=32, n_heads=4, enc_layers=1, dec_layers=1
+    )
     model.eval()
     batch = next(iter(small_loader))
     emb1 = model.embed(batch["x"], batch["pad_mask"])
@@ -108,8 +114,9 @@ def test_save_load_produces_same_embeddings(small_loader, tmp_path):
     path = tmp_path / "test_model.pt"
     torch.save(model.state_dict(), path)
 
-    model2 = LightCurveCompressor(mode="ae", latent_dim=8, d_model=32,
-                                  n_heads=4, enc_layers=1, dec_layers=1)
+    model2 = LightCurveCompressor(
+        mode="ae", latent_dim=8, d_model=32, n_heads=4, enc_layers=1, dec_layers=1
+    )
     model2.load_state_dict(torch.load(path, weights_only=True))
     model2.eval()
     emb2 = model2.embed(batch["x"], batch["pad_mask"])

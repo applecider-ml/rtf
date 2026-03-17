@@ -20,8 +20,16 @@ import numpy as np
 
 COARSE_NAMES = {0: "SN Ia", 1: "SN cc", 2: "Cataclysmic", 3: "AGN", 4: "TDE"}
 FINE_NAMES = {
-    0: "SN Ia", 1: "SN Ib", 2: "SN Ic", 3: "SN II", 4: "SN IIP",
-    5: "SN IIn", 6: "SN IIb", 7: "Cataclysmic", 8: "AGN", 9: "TDE",
+    0: "SN Ia",
+    1: "SN Ib",
+    2: "SN Ic",
+    3: "SN II",
+    4: "SN IIP",
+    5: "SN IIn",
+    6: "SN IIb",
+    7: "Cataclysmic",
+    8: "AGN",
+    9: "TDE",
 }
 
 # Colorblind-friendly palette
@@ -58,6 +66,7 @@ def project_2d(embeddings, method="umap", **kwargs):
 
     if method == "umap":
         from umap import UMAP
+
         reducer = UMAP(
             n_components=2,
             n_neighbors=kwargs.get("n_neighbors", 30),
@@ -69,6 +78,7 @@ def project_2d(embeddings, method="umap", **kwargs):
 
     elif method == "tsne":
         from sklearn.manifold import TSNE
+
         reducer = TSNE(
             n_components=2,
             perplexity=kwargs.get("perplexity", 30),
@@ -79,11 +89,21 @@ def project_2d(embeddings, method="umap", **kwargs):
 
     elif method == "pca":
         from sklearn.decomposition import PCA
+
         return PCA(n_components=2).fit_transform(embeddings), "PCA"
 
 
-def plot_latent_scatter(proj, labels, names, colors, title, output_path,
-                        point_size=3, alpha=0.5, figsize=(10, 8)):
+def plot_latent_scatter(
+    proj,
+    labels,
+    names,
+    colors,
+    title,
+    output_path,
+    point_size=3,
+    alpha=0.5,
+    figsize=(10, 8),
+):
     """Scatter plot of 2D projected embeddings colored by class."""
     fig, ax = plt.subplots(figsize=figsize)
 
@@ -98,9 +118,13 @@ def plot_latent_scatter(proj, labels, names, colors, title, output_path,
         color = colors.get(lbl, "#333333")
         n = mask.sum()
         ax.scatter(
-            proj[mask, 0], proj[mask, 1],
-            s=point_size, alpha=alpha, c=color,
-            label=f"{name} (n={n})", rasterized=True,
+            proj[mask, 0],
+            proj[mask, 1],
+            s=point_size,
+            alpha=alpha,
+            c=color,
+            label=f"{name} (n={n})",
+            rasterized=True,
         )
 
     ax.legend(markerscale=5, fontsize=9, loc="best", framealpha=0.9)
@@ -123,9 +147,15 @@ def plot_recon_error_map(proj, recon_errors, title, output_path, figsize=(10, 8)
     # Clip outliers for better colormap
     vmax = np.percentile(recon_errors, 95)
     scatter = ax.scatter(
-        proj[:, 0], proj[:, 1],
-        s=3, c=recon_errors, cmap="YlOrRd",
-        vmin=0, vmax=vmax, alpha=0.6, rasterized=True,
+        proj[:, 0],
+        proj[:, 1],
+        s=3,
+        c=recon_errors,
+        cmap="YlOrRd",
+        vmin=0,
+        vmax=vmax,
+        alpha=0.6,
+        rasterized=True,
     )
     plt.colorbar(scatter, ax=ax, label="Reconstruction error", shrink=0.8)
     ax.set_title(title, fontsize=13)
@@ -138,8 +168,16 @@ def plot_recon_error_map(proj, recon_errors, title, output_path, figsize=(10, 8)
     print(f"  Saved {output_path}")
 
 
-def plot_multi_dim_comparison(all_projs, all_labels, names, colors, dims, method_name,
-                              output_path, figsize=(20, 5)):
+def plot_multi_dim_comparison(
+    all_projs,
+    all_labels,
+    names,
+    colors,
+    dims,
+    method_name,
+    output_path,
+    figsize=(20, 5),
+):
     """Side-by-side latent space plots at different compression levels."""
     n = len(dims)
     fig, axes = plt.subplots(1, n, figsize=figsize)
@@ -156,9 +194,15 @@ def plot_multi_dim_comparison(all_projs, all_labels, names, colors, dims, method
             mask = labels == lbl
             name = names.get(lbl, str(lbl))
             color = colors.get(lbl, "#333333")
-            ax.scatter(proj[mask, 0], proj[mask, 1],
-                       s=2, alpha=0.4, c=color, label=name if i == 0 else None,
-                       rasterized=True)
+            ax.scatter(
+                proj[mask, 0],
+                proj[mask, 1],
+                s=2,
+                alpha=0.4,
+                c=color,
+                label=name if i == 0 else None,
+                rasterized=True,
+            )
         ax.set_title(f"dim={dim}", fontsize=11)
         ax.set_xticks([])
         ax.set_yticks([])
@@ -201,21 +245,28 @@ def visualize_run(run_path, output_dir, methods=("umap", "tsne")):
 
         # Coarse classes
         plot_latent_scatter(
-            proj, labels_coarse, COARSE_NAMES, COARSE_COLORS,
+            proj,
+            labels_coarse,
+            COARSE_NAMES,
+            COARSE_COLORS,
             f"{mode.upper()} dim={dim} — Coarse classes ({method_name})",
             os.path.join(out, f"coarse_{method}.png"),
         )
 
         # Fine classes
         plot_latent_scatter(
-            proj, labels_fine, FINE_NAMES, FINE_COLORS,
+            proj,
+            labels_fine,
+            FINE_NAMES,
+            FINE_COLORS,
             f"{mode.upper()} dim={dim} — Fine classes ({method_name})",
             os.path.join(out, f"fine_{method}.png"),
         )
 
         # Reconstruction error heatmap
         plot_recon_error_map(
-            proj, recon_errors,
+            proj,
+            recon_errors,
             f"{mode.upper()} dim={dim} — Reconstruction error ({method_name})",
             os.path.join(out, f"recon_error_{method}.png"),
         )
@@ -225,20 +276,36 @@ def main():
     parser = argparse.ArgumentParser(description="Latent space visualization")
     parser.add_argument("--runs-dir", required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--models", nargs="*", default=None,
-                        help="Specific run dirs to visualize (default: all)")
-    parser.add_argument("--methods", nargs="+", default=["umap", "tsne"],
-                        choices=["umap", "tsne", "pca"])
-    parser.add_argument("--comparison-dims", nargs="*", type=int, default=None,
-                        help="Dims for side-by-side comparison plot (e.g. 8 32 128 512)")
+    parser.add_argument(
+        "--models",
+        nargs="*",
+        default=None,
+        help="Specific run dirs to visualize (default: all)",
+    )
+    parser.add_argument(
+        "--methods",
+        nargs="+",
+        default=["umap", "tsne"],
+        choices=["umap", "tsne", "pca"],
+    )
+    parser.add_argument(
+        "--comparison-dims",
+        nargs="*",
+        type=int,
+        default=None,
+        help="Dims for side-by-side comparison plot (e.g. 8 32 128 512)",
+    )
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    run_dirs = args.models or sorted([
-        d for d in os.listdir(args.runs_dir)
-        if os.path.isdir(os.path.join(args.runs_dir, d))
-    ])
+    run_dirs = args.models or sorted(
+        [
+            d
+            for d in os.listdir(args.runs_dir)
+            if os.path.isdir(os.path.join(args.runs_dir, d))
+        ]
+    )
 
     # Individual run visualizations
     for d in run_dirs:
@@ -256,7 +323,9 @@ def main():
                         emb_path = os.path.join(args.runs_dir, d, "test_embeddings.npz")
                         if os.path.exists(emb_path):
                             data = np.load(emb_path, allow_pickle=True)
-                            proj, method_name = project_2d(data["embeddings"], method=method)
+                            proj, method_name = project_2d(
+                                data["embeddings"], method=method
+                            )
                             all_projs.append(proj)
                             all_labels.append(data["labels_coarse"])
                             dims_found.append(dim)
@@ -264,8 +333,12 @@ def main():
 
             if len(all_projs) >= 2:
                 plot_multi_dim_comparison(
-                    all_projs, all_labels, COARSE_NAMES, COARSE_COLORS,
-                    dims_found, method_name,
+                    all_projs,
+                    all_labels,
+                    COARSE_NAMES,
+                    COARSE_COLORS,
+                    dims_found,
+                    method_name,
                     os.path.join(args.output_dir, f"comparison_{method}.png"),
                 )
 

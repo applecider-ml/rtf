@@ -5,6 +5,7 @@ import torch
 
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from dataset import PhotoNPZDataset, collate_fn
@@ -18,7 +19,13 @@ class TestPhotoNPZDataset:
     def test_item_keys(self, fake_npz_dir, fake_stats):
         ds = PhotoNPZDataset(str(fake_npz_dir), stats_path=fake_stats)
         item = ds[0]
-        assert set(item.keys()) == {"x", "label_fine", "label_coarse", "obj_id", "seq_len"}
+        assert set(item.keys()) == {
+            "x",
+            "label_fine",
+            "label_coarse",
+            "obj_id",
+            "seq_len",
+        }
 
     def test_item_shapes(self, fake_npz_dir, fake_stats):
         ds = PhotoNPZDataset(str(fake_npz_dir), stats_path=fake_stats)
@@ -46,7 +53,9 @@ class TestPhotoNPZDataset:
         ds_full = PhotoNPZDataset(str(fake_npz_dir), stats_path=fake_stats)
         ds_cut = PhotoNPZDataset(str(fake_npz_dir), stats_path=fake_stats, horizon=10.0)
         # At least some samples should be shorter with horizon cut
-        shorter = sum(ds_cut[i]["seq_len"] <= ds_full[i]["seq_len"] for i in range(len(ds_full)))
+        shorter = sum(
+            ds_cut[i]["seq_len"] <= ds_full[i]["seq_len"] for i in range(len(ds_full))
+        )
         assert shorter == len(ds_full)
 
     def test_max_len_truncation(self, fake_npz_dir, fake_stats):
@@ -85,7 +94,13 @@ class TestCollateFn:
         ds = PhotoNPZDataset(str(fake_npz_dir), stats_path=fake_stats)
         batch = [ds[i] for i in range(4)]
         collated = collate_fn(batch)
-        assert set(collated.keys()) == {"x", "pad_mask", "label_fine", "label_coarse", "obj_ids"}
+        assert set(collated.keys()) == {
+            "x",
+            "pad_mask",
+            "label_fine",
+            "label_coarse",
+            "obj_ids",
+        }
 
     def test_padding(self, fake_npz_dir, fake_stats):
         ds = PhotoNPZDataset(str(fake_npz_dir), stats_path=fake_stats)

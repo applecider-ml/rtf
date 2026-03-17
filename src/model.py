@@ -39,8 +39,13 @@ class VectorQuantizer(nn.Module):
     Uses exponential moving average (EMA) codebook updates for stability.
     """
 
-    def __init__(self, num_codes: int, code_dim: int, commitment_cost: float = 0.25,
-                 ema_decay: float = 0.99):
+    def __init__(
+        self,
+        num_codes: int,
+        code_dim: int,
+        commitment_cost: float = 0.25,
+        ema_decay: float = 0.99,
+    ):
         super().__init__()
         self.num_codes = num_codes
         self.code_dim = code_dim
@@ -87,8 +92,7 @@ class VectorQuantizer(nn.Module):
                 # Laplace smoothing
                 n = self.ema_cluster_size.sum()
                 cluster_size = (
-                    (self.ema_cluster_size + 1e-5) /
-                    (n + self.num_codes * 1e-5) * n
+                    (self.ema_cluster_size + 1e-5) / (n + self.num_codes * 1e-5) * n
                 )
                 self.codebook.weight.data.copy_(
                     self.ema_embed_sum / cluster_size.unsqueeze(1)
@@ -148,7 +152,12 @@ class LightCurveCompressor(nn.Module):
         nn.init.normal_(self.cls_tok, std=0.02)
 
         enc_layer = nn.TransformerEncoderLayer(
-            d_model, n_heads, d_ff, dropout, batch_first=True, norm_first=True,
+            d_model,
+            n_heads,
+            d_ff,
+            dropout,
+            batch_first=True,
+            norm_first=True,
         )
         self.encoder = nn.TransformerEncoder(enc_layer, enc_layers)
         self.enc_norm = nn.LayerNorm(d_model)
@@ -169,7 +178,12 @@ class LightCurveCompressor(nn.Module):
         nn.init.normal_(self.pos_embed, std=0.02)
 
         dec_layer = nn.TransformerEncoderLayer(
-            d_model, n_heads, d_ff, max(dropout - 0.1, 0.1), batch_first=True, norm_first=True,
+            d_model,
+            n_heads,
+            d_ff,
+            max(dropout - 0.1, 0.1),
+            batch_first=True,
+            norm_first=True,
         )
         self.decoder = nn.TransformerEncoder(dec_layer, dec_layers)
         self.dec_norm = nn.LayerNorm(d_model)
@@ -219,7 +233,7 @@ class LightCurveCompressor(nn.Module):
     def decode(self, z: torch.Tensor) -> tuple:
         """Decode latent vector to (cont_hat, band_logits)."""
         h = self.z_proj(z).unsqueeze(1).expand(-1, self.max_len, -1)
-        h = h + self.pos_embed[:, :self.max_len, :]
+        h = h + self.pos_embed[:, : self.max_len, :]
         h = self.dec_norm(self.decoder(h))
         return self.head_cont(h), self.head_band(h)
 
@@ -251,8 +265,13 @@ class LightCurveCompressor(nn.Module):
             cont_hat, band_logits = self.decode(z_q)
             return cont_hat[:, :L], band_logits[:, :L], vq_loss, indices
 
-    def compute_loss(self, x: torch.Tensor, pad_mask: torch.Tensor,
-                     forward_out: tuple, beta: float = 1.0) -> dict:
+    def compute_loss(
+        self,
+        x: torch.Tensor,
+        pad_mask: torch.Tensor,
+        forward_out: tuple,
+        beta: float = 1.0,
+    ) -> dict:
         """
         Compute loss for any mode.
 
@@ -282,22 +301,35 @@ class LightCurveCompressor(nn.Module):
         channel_names = ["dt", "dt_prev", "logflux", "logflux_err"]
         per_ch = {}
         for i, name in enumerate(channel_names):
-            per_ch[f"mse_{name}"] = ((cont_hat[..., i] - cont_target[..., i]) ** 2 * valid).sum().item() / n_valid.item()
+            per_ch[f"mse_{name}"] = (
+                (cont_hat[..., i] - cont_target[..., i]) ** 2 * valid
+            ).sum().item() / n_valid.item()
 
         # Band reconstruction
         band_target = x[..., 4:7].argmax(-1)
-        ce = F.cross_entropy(band_logits.reshape(-1, 3), band_target.reshape(-1), reduction="none")
+        ce = F.cross_entropy(
+            band_logits.reshape(-1, 3), band_target.reshape(-1), reduction="none"
+        )
         recon_band = (ce.reshape(B, L) * valid).sum() / n_valid
 
         # Band accuracy
-        band_acc = ((band_logits.argmax(-1) == band_target) * valid).sum().item() / n_valid.item()
+        band_acc = (
+            (band_logits.argmax(-1) == band_target) * valid
+        ).sum().item() / n_valid.item()
 
         # Mode-specific regularization
         if self.mode == "ae":
             total = recon_cont + recon_band
-            return {"total_loss": total, "recon_cont": recon_cont.item(),
-                    "recon_band": recon_band.item(), "band_acc": band_acc,
-                    "beta": 0.0, "kld": 0.0, "vq_loss": 0.0, **per_ch}
+            return {
+                "total_loss": total,
+                "recon_cont": recon_cont.item(),
+                "recon_band": recon_band.item(),
+                "band_acc": band_acc,
+                "beta": 0.0,
+                "kld": 0.0,
+                "vq_loss": 0.0,
+                **per_ch,
+            }
 
         elif self.mode == "vae":
             kld_per_dim = -0.5 * (1 + logvar - mu.pow(2) - logvar.exp())
@@ -305,18 +337,32 @@ class LightCurveCompressor(nn.Module):
                 kld_per_dim = kld_per_dim.clamp(min=self.free_bits)
             kld = kld_per_dim.sum(-1).mean()
             total = recon_cont + recon_band + beta * kld
-            return {"total_loss": total, "recon_cont": recon_cont.item(),
-                    "recon_band": recon_band.item(), "kld": kld.item(),
-                    "beta": beta, "band_acc": band_acc, "vq_loss": 0.0, **per_ch}
+            return {
+                "total_loss": total,
+                "recon_cont": recon_cont.item(),
+                "recon_band": recon_band.item(),
+                "kld": kld.item(),
+                "beta": beta,
+                "band_acc": band_acc,
+                "vq_loss": 0.0,
+                **per_ch,
+            }
 
         elif self.mode == "vqvae":
             total = recon_cont + recon_band + vq_loss
             # Codebook utilization
             n_unique = indices.unique().numel()
-            return {"total_loss": total, "recon_cont": recon_cont.item(),
-                    "recon_band": recon_band.item(), "vq_loss": vq_loss.item(),
-                    "codebook_usage": n_unique, "beta": 0.0, "kld": 0.0,
-                    "band_acc": band_acc, **per_ch}
+            return {
+                "total_loss": total,
+                "recon_cont": recon_cont.item(),
+                "recon_band": recon_band.item(),
+                "vq_loss": vq_loss.item(),
+                "codebook_usage": n_unique,
+                "beta": 0.0,
+                "kld": 0.0,
+                "band_acc": band_acc,
+                **per_ch,
+            }
 
     @torch.no_grad()
     def embed(self, x: torch.Tensor, pad_mask: torch.Tensor) -> torch.Tensor:
@@ -332,7 +378,9 @@ class LightCurveCompressor(nn.Module):
             return z_q
 
     @torch.no_grad()
-    def reconstruction_error(self, x: torch.Tensor, pad_mask: torch.Tensor) -> torch.Tensor:
+    def reconstruction_error(
+        self, x: torch.Tensor, pad_mask: torch.Tensor
+    ) -> torch.Tensor:
         """Per-sample reconstruction error (anomaly score)."""
         z = self.embed(x, pad_mask)
         cont_hat, band_logits = self.decode(z)
@@ -342,10 +390,14 @@ class LightCurveCompressor(nn.Module):
         valid = ~pad_mask
         n_valid = valid.sum(dim=1).clamp(min=1).float()
 
-        cont_err = ((cont_hat - x[..., :4]) ** 2 * valid.unsqueeze(-1)).sum(dim=(1, 2)) / (n_valid * 4)
+        cont_err = ((cont_hat - x[..., :4]) ** 2 * valid.unsqueeze(-1)).sum(
+            dim=(1, 2)
+        ) / (n_valid * 4)
         band_target = x[..., 4:7].argmax(-1)
         B, L_act = band_target.shape
-        ce = F.cross_entropy(band_logits.reshape(-1, 3), band_target.reshape(-1), reduction="none").reshape(B, L_act)
+        ce = F.cross_entropy(
+            band_logits.reshape(-1, 3), band_target.reshape(-1), reduction="none"
+        ).reshape(B, L_act)
         band_err = (ce * valid).sum(dim=1) / n_valid
 
         return cont_err + band_err
@@ -355,6 +407,7 @@ class LightCurveCompressor(nn.Module):
         raw_size = self.in_channels * self.max_len * 4  # float32
         if self.mode == "vqvae":
             import math
+
             bits_per_alert = math.ceil(math.log2(self.vq.num_codes))
             compressed_bytes = max(1, bits_per_alert // 8 + 1)
         else:

@@ -40,8 +40,13 @@ def main():
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    run_dirs = sorted([d for d in os.listdir(args.runs_dir)
-                       if os.path.isdir(os.path.join(args.runs_dir, d))])
+    run_dirs = sorted(
+        [
+            d
+            for d in os.listdir(args.runs_dir)
+            if os.path.isdir(os.path.join(args.runs_dir, d))
+        ]
+    )
 
     results = []
     for d in run_dirs:
@@ -62,44 +67,59 @@ def main():
         print(f"\n{d}: {summary['mode']} dim={summary['latent_dim']}")
 
         coarse = linear_probe(
-            train_data["embeddings"], train_data["labels_coarse"],
-            test_data["embeddings"], test_data["labels_coarse"],
+            train_data["embeddings"],
+            train_data["labels_coarse"],
+            test_data["embeddings"],
+            test_data["labels_coarse"],
         )
         fine = linear_probe(
-            train_data["embeddings"], train_data["labels_fine"],
-            test_data["embeddings"], test_data["labels_fine"],
+            train_data["embeddings"],
+            train_data["labels_fine"],
+            test_data["embeddings"],
+            test_data["labels_fine"],
         )
 
         entry = {
-            "run": d, "mode": summary["mode"], "latent_dim": summary["latent_dim"],
+            "run": d,
+            "mode": summary["mode"],
+            "latent_dim": summary["latent_dim"],
             "compression_ratio": summary["compression_ratio"],
             "compressed_bytes": summary["compressed_bytes"],
-            "coarse_5class": coarse, "fine_10class": fine,
+            "coarse_5class": coarse,
+            "fine_10class": fine,
             "recon_cont": summary["test_metrics"]["recon_cont"],
             "recon_band": summary["test_metrics"]["recon_band"],
             "band_acc": summary["test_metrics"]["band_acc"],
         }
         results.append(entry)
 
-        print(f"  Coarse: acc={coarse['accuracy']:.3f} bal={coarse['balanced_accuracy']:.3f} auc={coarse['roc_auc']:.3f}")
-        print(f"  Fine:   acc={fine['accuracy']:.3f} bal={fine['balanced_accuracy']:.3f} auc={fine['roc_auc']:.3f}")
+        print(
+            f"  Coarse: acc={coarse['accuracy']:.3f} bal={coarse['balanced_accuracy']:.3f} auc={coarse['roc_auc']:.3f}"
+        )
+        print(
+            f"  Fine:   acc={fine['accuracy']:.3f} bal={fine['balanced_accuracy']:.3f} auc={fine['roc_auc']:.3f}"
+        )
 
     with open(os.path.join(args.output_dir, "linear_probe_results.json"), "w") as f:
         json.dump(results, f, indent=2)
 
     # Summary table
-    print(f"\n{'='*100}")
+    print(f"\n{'=' * 100}")
     print("LINEAR PROBE RESULTS (all models)")
-    print(f"{'='*100}")
-    print(f"{'mode':>6} {'dim':>5} {'compress':>8} {'recon':>8} {'band%':>6} "
-          f"{'c_acc':>6} {'c_bal':>6} {'c_auc':>6} {'f_acc':>6} {'f_bal':>6} {'f_auc':>6}")
+    print(f"{'=' * 100}")
+    print(
+        f"{'mode':>6} {'dim':>5} {'compress':>8} {'recon':>8} {'band%':>6} "
+        f"{'c_acc':>6} {'c_bal':>6} {'c_auc':>6} {'f_acc':>6} {'f_bal':>6} {'f_auc':>6}"
+    )
     print("-" * 85)
     for r in sorted(results, key=lambda x: (x["mode"], x["latent_dim"])):
         c, fi = r["coarse_5class"], r["fine_10class"]
-        print(f"{r['mode']:>6} {r['latent_dim']:5d} {r['compression_ratio']:7.1f}x "
-              f"{r['recon_cont']+r['recon_band']:8.4f} {r['band_acc']:6.3f} "
-              f"{c['accuracy']:6.3f} {c['balanced_accuracy']:6.3f} {c['roc_auc']:6.3f} "
-              f"{fi['accuracy']:6.3f} {fi['balanced_accuracy']:6.3f} {fi['roc_auc']:6.3f}")
+        print(
+            f"{r['mode']:>6} {r['latent_dim']:5d} {r['compression_ratio']:7.1f}x "
+            f"{r['recon_cont'] + r['recon_band']:8.4f} {r['band_acc']:6.3f} "
+            f"{c['accuracy']:6.3f} {c['balanced_accuracy']:6.3f} {c['roc_auc']:6.3f} "
+            f"{fi['accuracy']:6.3f} {fi['balanced_accuracy']:6.3f} {fi['roc_auc']:6.3f}"
+        )
 
 
 if __name__ == "__main__":
