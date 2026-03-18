@@ -93,6 +93,33 @@ The MLP decoders improve **balanced accuracy by 15-21 percentage points** over l
 | 512 | 2048B | 3.5x | **88.2%** | 87.1% | 80.7% |
 | 1024 | 4096B | 1.8x | **88.5%** | 86.0% | 79.9% |
 
+### Alert metadata experiment
+
+Adding 28 ZTF alert candidate fields (star/galaxy scores, PSF shape, real/bogus, nearest source properties) to the encoder input:
+
+| Dim | AE recon (base) | AE recon (meta) | AE acc (base) | AE acc (meta) | AE AUC (base) | AE AUC (meta) |
+|-----|----------------|----------------|--------------|--------------|--------------|--------------|
+| 8 | 0.29 | **0.17** | 82.6% | 81.9% | 0.886 | **0.899** |
+| 32 | 0.27 | **0.13** | 85.8% | 84.0% | 0.918 | 0.914 |
+| 64 | 0.26 | **0.13** | 86.5% | 85.8% | 0.926 | **0.934** |
+| 128 | 0.26 | **0.13** | 87.1% | 86.3% | 0.946 | 0.942 |
+| 256 | 0.26 | **0.12** | 88.4% | 86.3% | 0.948 | 0.941 |
+| 512 | 0.26 | **0.13** | 88.2% | 86.7% | 0.950 | 0.943 |
+
+Metadata **halves reconstruction error** (0.26 → 0.13) by giving the encoder contextual information to better reconstruct photometry. Classification accuracy is comparable — the photometry alone already carries the discriminative signal, but ROC-AUC improves slightly at lower dims.
+
+### Latent space visualization
+
+UMAP projections of the AE latent space at increasing dimensions (8 → 32 → 128 → 512), colored by coarse transient class:
+
+![UMAP comparison across latent dimensions](analysis/visualizations/comparison_umap.png)
+
+t-SNE projections for comparison:
+
+![t-SNE comparison across latent dimensions](analysis/visualizations/comparison_tsne.png)
+
+Class separation improves with latent dimension. AGN (pink) and Cataclysmic (green) form distinct clusters by dim=32. SN Ia (blue) separates from SN cc (orange) more clearly at higher dims, though some overlap persists (physically expected — early SN subtypes have similar light curves).
+
 ### Key findings
 
 1. **The plain autoencoder (AE) wins across the board** — better reconstruction AND better downstream classification at every latent dimension. The KL penalty in the VAE hurts both metrics without compensating benefit for compression.
@@ -105,7 +132,9 @@ The MLP decoders improve **balanced accuracy by 15-21 percentage points** over l
 
 5. **The sweet spot is AE dim=64**: 0.16 mag reconstruction, 73% balanced classification accuracy with MLP decoder, at 28x compression (256 bytes/alert).
 
-6. **Context vs the full XGBoost pipeline**: the AE at dim=256 (88.4% accuracy) approaches the full XGBoost (94.4%) using only raw photometry — no engineered features or catalog cross-matches. Adding alert metadata is expected to close much of this gap.
+6. **Alert metadata halves reconstruction error** but adds little to classification — the photometry sequence already carries the discriminative signal.
+
+7. **Context vs the full XGBoost pipeline**: the AE at dim=256 (88.4% accuracy) approaches the full XGBoost (94.4%) using only raw photometry — no engineered features or catalog cross-matches.
 
 ### Classes
 
@@ -117,7 +146,8 @@ The MLP decoders improve **balanced accuracy by 15-21 percentage points** over l
 
 - 18,245 labeled ZTF transients from the AppleCiDEr sample
 - Train: 12,771 / Val: 2,737 / Test: 2,737
-- Photometry stored as NPZ files with 7-channel event sequences
+- Photometry from raw ZTF alert packets (`alerts.npy`), with 28 candidate metadata fields
+- Pre-processed via `preprocess_alerts.py` into compact NPZ for fast training
 
 ## Usage
 

@@ -56,7 +56,11 @@ FINE_COLORS = {
 
 
 def project_2d(embeddings, method="umap", **kwargs):
-    """Project embeddings to 2D using UMAP or t-SNE."""
+    """Project embeddings to 2D using UMAP or t-SNE.
+
+    Returns (projection, display_name, method_key) where method_key
+    is the actual method used (may differ from input if fallback occurs).
+    """
     if method == "umap":
         try:
             from umap import UMAP
@@ -74,7 +78,7 @@ def project_2d(embeddings, method="umap", **kwargs):
             metric="cosine",
             random_state=42,
         )
-        return reducer.fit_transform(embeddings), "UMAP"
+        return reducer.fit_transform(embeddings), "UMAP", "umap"
 
     elif method == "tsne":
         from sklearn.manifold import TSNE
@@ -85,12 +89,12 @@ def project_2d(embeddings, method="umap", **kwargs):
             random_state=42,
             init="pca",
         )
-        return reducer.fit_transform(embeddings), "t-SNE"
+        return reducer.fit_transform(embeddings), "t-SNE", "tsne"
 
     elif method == "pca":
         from sklearn.decomposition import PCA
 
-        return PCA(n_components=2).fit_transform(embeddings), "PCA"
+        return PCA(n_components=2).fit_transform(embeddings), "PCA", "pca"
 
 
 def plot_latent_scatter(
@@ -241,7 +245,7 @@ def visualize_run(run_path, output_dir, methods=("umap", "tsne")):
     print(f"\nVisualizing {run_name} ({mode}, dim={dim}, {len(embeddings)} samples)")
 
     for method in methods:
-        proj, method_name = project_2d(embeddings, method=method)
+        proj, method_name, method_key = project_2d(embeddings, method=method)
 
         # Coarse classes
         plot_latent_scatter(
@@ -250,7 +254,7 @@ def visualize_run(run_path, output_dir, methods=("umap", "tsne")):
             COARSE_NAMES,
             COARSE_COLORS,
             f"{mode.upper()} dim={dim} — Coarse classes ({method_name})",
-            os.path.join(out, f"coarse_{method}.png"),
+            os.path.join(out, f"coarse_{method_key}.png"),
         )
 
         # Fine classes
@@ -260,7 +264,7 @@ def visualize_run(run_path, output_dir, methods=("umap", "tsne")):
             FINE_NAMES,
             FINE_COLORS,
             f"{mode.upper()} dim={dim} — Fine classes ({method_name})",
-            os.path.join(out, f"fine_{method}.png"),
+            os.path.join(out, f"fine_{method_key}.png"),
         )
 
         # Reconstruction error heatmap
@@ -268,7 +272,7 @@ def visualize_run(run_path, output_dir, methods=("umap", "tsne")):
             proj,
             recon_errors,
             f"{mode.upper()} dim={dim} — Reconstruction error ({method_name})",
-            os.path.join(out, f"recon_error_{method}.png"),
+            os.path.join(out, f"recon_error_{method_key}.png"),
         )
 
 
@@ -295,6 +299,11 @@ def main():
         default=None,
         help="Dims for side-by-side comparison plot (e.g. 8 32 128 512)",
     )
+    parser.add_argument(
+        "--comparison-only",
+        action="store_true",
+        help="Only generate comparison plots, skip individual run visualizations",
+    )
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -308,9 +317,10 @@ def main():
     )
 
     # Individual run visualizations
-    for d in run_dirs:
-        run_path = os.path.join(args.runs_dir, d)
-        visualize_run(run_path, args.output_dir, methods=args.methods)
+    if not args.comparison_only:
+        for d in run_dirs:
+            run_path = os.path.join(args.runs_dir, d)
+            visualize_run(run_path, args.output_dir, methods=args.methods)
 
     # Multi-dim comparison plot
     if args.comparison_dims:
@@ -323,7 +333,7 @@ def main():
                         emb_path = os.path.join(args.runs_dir, d, "test_embeddings.npz")
                         if os.path.exists(emb_path):
                             data = np.load(emb_path, allow_pickle=True)
-                            proj, method_name = project_2d(
+                            proj, method_name, method_key = project_2d(
                                 data["embeddings"], method=method
                             )
                             all_projs.append(proj)
@@ -339,7 +349,7 @@ def main():
                     COARSE_COLORS,
                     dims_found,
                     method_name,
-                    os.path.join(args.output_dir, f"comparison_{method}.png"),
+                    os.path.join(args.output_dir, f"comparison_{method_key}.png"),
                 )
 
 
