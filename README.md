@@ -1,4 +1,4 @@
-# RTF: Rapid Transient Fingerprints
+# RTF: Real-time Transient Fingerprints
 
 Latent-space compression of astronomical alert streams using transformer autoencoders. Encodes variable-length multi-band light curves into compact fixed-length fingerprints that preserve astrophysically meaningful information.
 

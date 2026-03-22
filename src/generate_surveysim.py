@@ -32,18 +32,32 @@ LABEL_MAP = {
 }
 
 # Model mapping: population name → (PopulationClass, model_name, model_key)
+# Model key MUST match TransientType::Display from survey-sim Rust code:
+#   Kilonova, SNIa, SNII, SNIbc, TDE, FBOT, Afterglow
 POP_CONFIG = {
     "kilonova": {
         "pop_class": "KilonovaPopulation",
         "model_name": "MetzgerKN",
         "model_key": "Kilonova",
-        "n_inject": 100000,  # need many since detection rate is low
-    },
-    "afterglow": {
-        "pop_class": "KilonovaPopulation",  # use KN pop with afterglow model
-        "model_name": "Afterglow",
-        "model_key": "Kilonova",
         "n_inject": 100000,
+    },
+    "afterglow_onaxis": {
+        "pop_class": "OnAxisGrbPopulation",
+        "model_name": None,  # uses FiestaAfterglowModel
+        "model_key": "Afterglow",
+        "n_inject": 100000,
+        "grb_csv": True,
+        "use_fiesta": True,
+    },
+    "afterglow_offaxis": {
+        "pop_class": "OffAxisGrbPopulation",
+        "model_name": None,
+        "model_key": "Afterglow",
+        "n_inject": 500000,
+        "grb_csv": True,
+        "use_fiesta": True,
+        "rate": 800.0,
+        "z_max": 1.0,
     },
     "tde": {
         "pop_class": "TdePopulation",
