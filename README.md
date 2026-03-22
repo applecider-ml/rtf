@@ -15,98 +15,96 @@ LSST will produce ~10M alerts/night. Current brokers filter this to a small subs
 
 ## Approach
 
-We train transformer-based autoencoders on ~18K labeled ZTF transient light curves and compare three bottleneck architectures:
+We train transformer-based autoencoders on ~18K labeled ZTF transient light curves. The encoder ingests up to four modalities:
 
-| Architecture | Bottleneck | Regularization |
+| Modality | Channels | Description |
 |---|---|---|
-| **AE** (autoencoder) | Deterministic projection | None |
-| **VAE** (variational) | Gaussian (mu, logvar) + reparameterization | KL divergence |
-| **VQ-VAE** (vector quantized) | Discrete codebook (512 entries) | Commitment loss + EMA updates |
+| **Photometry** | 7 | log1p(dt), log1p(dt_prev), logflux, logflux_err, one-hot band (g/r/i) |
+| **Alert metadata** | +30 | Star/galaxy scores, PSF shape, real/bogus, nearest source properties |
+| **Cutout stamps** | (3, 63, 63) | Most recent science/template/difference image via CNN |
+| **GP features** | +114 | Physics-based features from [lightcurve-fitting](https://github.com/boom-astro/lightcurve-fitting) GP fitter |
 
-All three share the same encoder (4-layer transformer with Time2Vec positional encoding and CLS token) and decoder (2-layer transformer with learned positional queries).
+The encoder compresses all modalities into a fixed-length latent vector (e.g., 64 floats = 256 bytes). A decoder reconstructs the photometry, and an optional classification head jointly classifies the source.
 
-### Input format
+### Architecture comparison
 
-Each alert is a variable-length photometry sequence `(L, 7)`:
+Three bottleneck types are compared (AE wins):
 
-| Channel | Description |
-|---|---|
-| `log1p(dt)` | Log time since first detection (days) |
-| `log1p(dt_prev)` | Log inter-observation gap (days) |
-| `logflux` | Log10 flux |
-| `logflux_err` | Log flux uncertainty |
-| `band_g` | One-hot: ZTF g-band |
-| `band_r` | One-hot: ZTF r-band |
-| `band_i` | One-hot: ZTF i-band |
+| Architecture | Bottleneck | Result |
+|---|---|---|
+| **AE** (autoencoder) | Deterministic projection | **Best reconstruction + classification** |
+| VAE (variational) | Gaussian + KL divergence | KL penalty hurts both metrics |
+| VQ-VAE (vector quantized) | 512-entry codebook | Plateaus at ~80% (codebook bottleneck) |
 
-Sequences are padded to max length 257 and normalized using global training set statistics.
+### Image tower
+
+Two backends for processing alert cutout stamps:
+
+| Backend | Params | Description |
+|---|---|---|
+| `simple` | ~260K | 4-layer CNN, trained from scratch |
+| `zoobot` | ~8.5M | Galaxy Zoo pretrained ConvNeXt-pico ([Zoobot](https://huggingface.co/mwalmsley/zoobot-encoder-convnext_pico)) |
+
+The Zoobot backbone processes the most recent alert stamp (upsampled 63→224px) and adds the image embedding to the CLS token. It can be frozen or fine-tuned.
 
 ## Results
 
+### Early classification: accuracy vs detection count
+
+A single model trained with random truncation [3, L] is evaluated at each fixed detection count. This simulates real-time classification as alerts accumulate.
+
+**Zoobot fine-tuned + metadata + GP + joint classification (dim=64, 256 bytes/alert):**
+
+| N detections | Accuracy | Balanced acc | ROC-AUC |
+|---|---|---|---|
+| 3 | 84.1% | 57.7% | 0.921 |
+| 5 | 85.7% | 58.7% | 0.923 |
+| 10 | 85.7% | 58.7% | 0.935 |
+| 20 | 85.8% | 59.3% | 0.937 |
+| 50 | 86.7% | 60.0% | 0.943 |
+| 100 | 87.0% | 60.6% | 0.943 |
+| all | 87.4% | 61.7% | 0.946 |
+
+Compared to metadata + GP only (no images):
+
+| N detections | meta+GP acc | Zoobot acc | Delta | meta+GP bal | Zoobot bal | Delta |
+|---|---|---|---|---|---|---|
+| 3 | 79.5% | **84.1%** | +4.6pp | 44.9% | **57.7%** | **+12.8pp** |
+| 5 | 79.8% | **85.7%** | +5.9pp | 45.2% | **58.7%** | **+13.5pp** |
+| 10 | 80.7% | **85.7%** | +5.0pp | 46.6% | **58.7%** | +12.1pp |
+| 50 | 83.1% | **86.7%** | +3.6pp | 52.0% | **60.0%** | +8.0pp |
+| all | 84.2% | **87.4%** | +3.2pp | 54.0% | **61.7%** | +7.7pp |
+
+**Galaxy Zoo pretrained images are the single most valuable modality addition**, especially at early detections where photometry is sparse but stamps show host morphology. The joint classification loss (`--cls-weight 0.5`) is also critical for pushing class-discriminative information into the latent space.
+
 ### Reconstruction quality in physical units
 
-The AE reconstructs light curves to sub-0.2 mag accuracy at moderate compression:
+The AE reconstructs light curves to sub-0.2 mag accuracy at moderate compression (photometry-only model):
 
-| Mode | Dim | Bytes | Compress | Mag (mean) | Mag (median) | Mag (90th pct) | Time error (days) | Band acc |
-|------|-----|-------|----------|-----------|-------------|----------------|-------------------|----------|
-| AE | 2 | 8B | 900x | 0.34 | 0.26 | 0.60 | 7.1 | 62.7% |
-| AE | 8 | 32B | 225x | 0.25 | 0.19 | 0.46 | 3.5 | 70.7% |
-| AE | 32 | 128B | 56x | 0.22 | 0.16 | 0.40 | 2.6 | 72.9% |
-| **AE** | **64** | **256B** | **28x** | **0.21** | **0.16** | **0.40** | **2.5** | **73.3%** |
-| AE | 256 | 1024B | 7x | 0.21 | 0.16 | 0.40 | 2.5 | 73.6% |
-| AE | 1024 | 4096B | 1.8x | 0.21 | 0.16 | 0.40 | 2.4 | 73.9% |
-| VAE | 64 | 256B | 28x | 0.42 | 0.33 | 0.73 | 15.6 | 64.7% |
-| VQ-VAE | 64 | 256B | 28x | 0.37 | 0.28 | 0.65 | 7.3 | 63.9% |
+| Dim | Bytes | Compression | Mag (median) | Time error (days) | Band acc |
+|-----|-------|-------------|-------------|-------------------|----------|
+| 8 | 32B | 225x | 0.19 | 3.5 | 70.7% |
+| **64** | **256B** | **28x** | **0.16** | **2.5** | **73.3%** |
+| 256 | 1024B | 7x | 0.16 | 2.5 | 73.6% |
 
-Reconstruction saturates at dim ~64 (0.16 mag median). The AE outperforms the VAE by ~0.2 mag and VQ-VAE by ~0.1 mag at every dimension.
+Adding modalities improves reconstruction further:
 
-### Downstream classification from latent vectors
+| Input modality | Recon MSE | Band acc |
+|---|---|---|
+| Photometry only | 0.26 | 62.7% |
+| + metadata | 0.13 | 65.0% |
+| + meta + GP | 0.089 | 68.3% |
+| + meta + Zoobot + GP | 0.10 | 71.3% |
 
-Three decoder types are compared: linear probe (logistic regression), 2-layer MLP, and 3-layer MLP. All decoders are trained on frozen latent vectors from the best AE checkpoint.
+### Architecture comparison — AE vs VAE vs VQ-VAE
 
-#### Coarse 5-class accuracy (SNIa / SNcc / Cataclysmic / AGN / TDE)
+Coarse 5-class linear probe accuracy (photometry only):
 
-| Dim | Bytes | Linear acc | Linear bal | MLP-2 acc | MLP-2 bal | MLP-3 acc | MLP-3 bal |
-|-----|-------|-----------|-----------|----------|----------|----------|----------|
-| 2 | 8B | 76.4% | 36.6% | 68.3% | 54.7% | 69.6% | **55.0%** |
-| 8 | 32B | 82.6% | 49.6% | 81.4% | 70.2% | 82.4% | **70.7%** |
-| 32 | 128B | 85.8% | 55.8% | 84.9% | **73.3%** | 85.5% | 73.1% |
-| **64** | **256B** | **86.5%** | **57.9%** | **85.2%** | **71.8%** | **86.2%** | **72.3%** |
-| 256 | 1024B | 88.4% | 64.7% | 86.9% | **74.1%** | 86.1% | 73.3% |
-| 512 | 2048B | 88.2% | 66.6% | 86.4% | 74.2% | 86.9% | **76.2%** |
-| 1024 | 4096B | 88.5% | 63.8% | 87.6% | **78.5%** | 87.8% | 76.3% |
-
-The MLP decoders improve **balanced accuracy by 15-21 percentage points** over linear probes, critical for rare classes (TDE, SN subtypes).
-
-#### Architecture comparison — linear probe accuracy
-
-| Dim | Bytes | Compression | AE | VAE | VQ-VAE |
-|-----|-------|-------------|-----|-----|--------|
-| 2 | 8B | 900x | **76.4%** | 73.7% | 75.8% |
-| 4 | 16B | 450x | **79.4%** | 73.4% | 78.1% |
-| 8 | 32B | 225x | **82.6%** | 77.0% | 77.4% |
-| 16 | 64B | 112x | **84.6%** | 79.1% | 78.8% |
-| 32 | 128B | 56x | **85.8%** | 82.3% | 78.5% |
-| 64 | 256B | 28x | **86.5%** | 84.3% | 78.7% |
-| 128 | 512B | 14x | **87.1%** | 86.3% | 80.1% |
-| 256 | 1024B | 7x | **88.4%** | 86.8% | 80.0% |
-| 512 | 2048B | 3.5x | **88.2%** | 87.1% | 80.7% |
-| 1024 | 4096B | 1.8x | **88.5%** | 86.0% | 79.9% |
-
-### Alert metadata experiment
-
-Adding 28 ZTF alert candidate fields (star/galaxy scores, PSF shape, real/bogus, nearest source properties) to the encoder input:
-
-| Dim | AE recon (base) | AE recon (meta) | AE acc (base) | AE acc (meta) | AE AUC (base) | AE AUC (meta) |
-|-----|----------------|----------------|--------------|--------------|--------------|--------------|
-| 8 | 0.29 | **0.17** | 82.6% | 81.9% | 0.886 | **0.899** |
-| 32 | 0.27 | **0.13** | 85.8% | 84.0% | 0.918 | 0.914 |
-| 64 | 0.26 | **0.13** | 86.5% | 85.8% | 0.926 | **0.934** |
-| 128 | 0.26 | **0.13** | 87.1% | 86.3% | 0.946 | 0.942 |
-| 256 | 0.26 | **0.12** | 88.4% | 86.3% | 0.948 | 0.941 |
-| 512 | 0.26 | **0.13** | 88.2% | 86.7% | 0.950 | 0.943 |
-
-Metadata **halves reconstruction error** (0.26 → 0.13) by giving the encoder contextual information to better reconstruct photometry. Classification accuracy is comparable — the photometry alone already carries the discriminative signal, but ROC-AUC improves slightly at lower dims.
+| Dim | AE | VAE | VQ-VAE |
+|-----|-----|-----|--------|
+| 8 | **82.6%** | 77.0% | 77.4% |
+| 64 | **86.5%** | 84.3% | 78.7% |
+| 256 | **88.4%** | 86.8% | 80.0% |
 
 ### Latent space visualization
 
@@ -114,27 +112,23 @@ UMAP projections of the AE latent space at increasing dimensions (8 → 32 → 1
 
 ![UMAP comparison across latent dimensions](analysis/visualizations/comparison_umap.png)
 
-t-SNE projections for comparison:
-
 ![t-SNE comparison across latent dimensions](analysis/visualizations/comparison_tsne.png)
-
-Class separation improves with latent dimension. AGN (pink) and Cataclysmic (green) form distinct clusters by dim=32. SN Ia (blue) separates from SN cc (orange) more clearly at higher dims, though some overlap persists (physically expected — early SN subtypes have similar light curves).
 
 ### Key findings
 
-1. **The plain autoencoder (AE) wins across the board** — better reconstruction AND better downstream classification at every latent dimension. The KL penalty in the VAE hurts both metrics without compensating benefit for compression.
+1. **Galaxy Zoo pretrained images add +13pp balanced accuracy** at early detections (N=3), making stamps the most valuable modality for rare class identification (TDE, SN subtypes).
 
-2. **Reconstruction saturates at dim ~64** (0.16 mag median, 2.5 day time error). Classification continues improving to dim ~512.
+2. **A single model handles any detection count** — random truncation during training produces a universal encoder that works from N=3 to full light curve.
 
-3. **MLP decoders dramatically improve balanced accuracy** (+15-21pp over linear probes), especially for rare classes. A simple 2-layer MLP is sufficient.
+3. **Joint classification + reconstruction** (`--cls-weight 0.5`) pushes class-discriminative information into the latent vector, improving downstream classification without sacrificing reconstruction.
 
-4. **VQ-VAE plateaus at ~80%** regardless of latent dimension. The 512-entry codebook is the true bottleneck — all dims map to ~95 active codes. A multi-code or hierarchical VQ approach would be needed to improve this.
+4. **The plain autoencoder (AE) outperforms VAE and VQ-VAE** at every dimension — the KL penalty hurts without compensating benefit for compression.
 
-5. **The sweet spot is AE dim=64**: 0.16 mag reconstruction, 73% balanced classification accuracy with MLP decoder, at 28x compression (256 bytes/alert).
+5. **GP features from lightcurve-fitting (0.2ms/source) match CNN image processing for reconstruction** — the GP encodes the same morphological information as the stamps.
 
-6. **Alert metadata halves reconstruction error** but adds little to classification — the photometry sequence already carries the discriminative signal.
+6. **Reconstruction saturates at dim ~64** (0.16 mag median, 256 bytes/alert). Classification continues improving to dim ~512.
 
-7. **Context vs the full XGBoost pipeline**: the AE at dim=256 (88.4% accuracy) approaches the full XGBoost (94.4%) using only raw photometry — no engineered features or catalog cross-matches.
+7. **87.4% accuracy from 256 bytes** — approaches the full XGBoost pipeline (94.4%) which uses 128 hand-crafted features + catalog cross-matches.
 
 ### Classes
 
@@ -146,116 +140,128 @@ Class separation improves with latent dimension. AGN (pink) and Cataclysmic (gre
 
 - 18,245 labeled ZTF transients from the AppleCiDEr sample
 - Train: 12,771 / Val: 2,737 / Test: 2,737
-- Photometry from raw ZTF alert packets (`alerts.npy`), with 28 candidate metadata fields
+- Photometry from raw ZTF alert packets (`alerts.npy`), with 30 candidate metadata fields
+- Cutout stamps: science/template/difference (63x63 px) per alert
+- GP features: 114-dim vector from lightcurve-fitting (computed on the fly during preprocessing)
 - Pre-processed via `preprocess_alerts.py` into compact NPZ for fast training
 
 ## Usage
 
-### Training a single model
+### Preprocessing
+
+```bash
+# Convert raw alerts to compact NPZ with images + GP features
+python src/preprocess_alerts.py \
+    --alert-dir /path/to/data_ztf \
+    --splits /path/to/splits.csv \
+    --labels-dir /path/to/photo_events \
+    --output-dir data_gp \
+    --fit-gp \
+    --workers 32
+```
+
+### Training
 
 ```bash
 cd src
 
-# AE with 64-dimensional latent space
+# Best model: Zoobot + metadata + GP + joint classification + random truncation
+python train.py \
+    --data-dir ../data_gp \
+    --output-dir ../runs \
+    --mode ae \
+    --use-metadata \
+    --use-images --image-backbone zoobot \
+    --use-gp --gp-dim 114 \
+    --cls-weight 0.5 --num-classes 5 \
+    --random-truncate --min-detections 3 \
+    --latent-dims 64 \
+    --epochs 200
+
+# Photometry-only baseline
 python train.py \
     --data-dir /path/to/photo_events \
     --output-dir ../runs \
     --mode ae \
     --latent-dims 64 \
     --epochs 200
-
-# VAE
-python train.py --mode vae --latent-dims 64 --beta 1.0 ...
-
-# VQ-VAE with 512-entry codebook
-python train.py --mode vqvae --latent-dims 64 --num-codes 512 ...
-```
-
-### Latent dimension sweep
-
-```bash
-python train.py \
-    --data-dir /path/to/photo_events \
-    --output-dir ../runs \
-    --mode ae \
-    --latent-dims 2 4 8 16 32 64 128 256 512 1024 \
-    --epochs 200
 ```
 
 ### Evaluation
 
 ```bash
+# Early classification: accuracy vs detection count
+python eval_early.py \
+    --checkpoint ../runs/model_name/best_model.pt \
+    --summary ../runs/model_name/summary.json \
+    --data-dir ../data_gp \
+    --output-dir ../analysis/early \
+    --image-backbone zoobot --num-classes 5 \
+    --detection-counts 3 5 7 10 15 20 30 50 100
+
 # Linear probe classification
 python linear_probe.py --runs-dir ../runs --output-dir ../analysis
 
-# MLP decoder classifiers (linear + 2-layer + 3-layer MLP)
-python mlp_decoder.py --runs-dir ../runs --output-dir ../analysis/decoders
-
-# Physical-unit reconstruction metrics + light curve plots
+# Physical-unit reconstruction metrics
 python evaluate_physical.py --runs-dir ../runs --data-dir /path/to/photo_events \
     --output-dir ../analysis/physical
-```
-
-### SLURM (OzSTAR)
-
-```bash
-# Full AE vs VAE vs VQ-VAE sweep (30 models, ~8 hours on A100)
-sbatch slurm/sweep_all_modes.sh
-
-# Evaluation (physical metrics + MLP decoders, ~45 min)
-sbatch slurm/evaluate.sh
 ```
 
 ### Tests
 
 ```bash
 pip install pytest pytest-cov
-pytest tests/ -v
+pytest tests/ -v  # 71 tests
 ```
 
 ## Architecture
 
 ```
-Encoder:
-  Linear(7, 128) + Time2Vec(128) + CLS token
-  TransformerEncoder(4 layers, 8 heads, 512 FFN, dropout=0.3)
-  CLS token -> LayerNorm -> bottleneck
+Input modalities:
+  Photometry (L, 7)  ──→ Linear(in_ch, 128) + Time2Vec ──→ sequence tokens
+  Metadata (L, 30)   ──→ (concatenated with photometry)
+  Image (3, 63, 63)  ──→ ImageTower (CNN or Zoobot) ──→ added to CLS token
+  GP features (114)  ──→ Linear(114, 128) ──→ added to CLS token
 
-Bottleneck (mode-dependent):
+Encoder:
+  TransformerEncoder(4 layers, 8 heads, 512 FFN, dropout=0.3)
+  CLS token → LayerNorm → bottleneck
+
+Bottleneck:
   AE:     Linear(128, latent_dim)
-  VAE:    Linear(128, latent_dim) x 2 -> (mu, logvar) -> reparameterize
-  VQ-VAE: Linear(128, latent_dim) -> VectorQuantizer(512 codes, EMA)
+  VAE:    (mu_proj, logvar_proj) → reparameterize
+  VQ-VAE: VectorQuantizer(512 codes, EMA)
+
+Classification head (optional):
+  Linear(latent_dim, latent_dim) → ReLU → Linear(latent_dim, num_classes)
 
 Decoder:
-  Linear(latent_dim, 128) -> broadcast to 257 positions + learned pos embed
-  TransformerEncoder(2 layers, 8 heads, 512 FFN, dropout=0.2)
-  head_cont: Linear(128, 4)  -> continuous channels (MSE loss)
-  head_band: Linear(128, 3)  -> band logits (CE loss)
+  Linear(latent_dim, 128) → broadcast to 257 positions + pos embed
+  TransformerEncoder(2 layers)
+  head_cont: Linear(128, 4)  → MSE loss
+  head_band: Linear(128, 3)  → CE loss
 ```
-
-Parameters: ~1.2M (dim=2) to ~1.6M (dim=1024).
 
 ## File structure
 
 ```
 rtf/
 ├── src/
-│   ├── model.py              # LightCurveCompressor (AE/VAE/VQ-VAE)
-│   ├── dataset.py            # PhotoNPZDataset + collate_fn
-│   ├── train.py              # Training loop + latent dim sweep
+│   ├── model.py              # LightCurveCompressor + ImageTower
+│   ├── dataset.py            # AlertDataset, MetaNPZDataset, PhotoNPZDataset
+│   ├── train.py              # Training loop with all modality flags
+│   ├── preprocess_alerts.py  # alerts.npy → compact NPZ with images + GP
+│   ├── eval_early.py         # Accuracy vs detection count evaluation
 │   ├── linear_probe.py       # Linear probe classification
 │   ├── mlp_decoder.py        # MLP decoder classifiers
-│   └── evaluate_physical.py  # Physical-unit metrics + light curve plots
-├── tests/
-│   ├── conftest.py           # Shared fixtures
-│   ├── test_model.py         # Model unit tests (61 tests)
-│   ├── test_dataset.py       # Dataset tests
-│   └── test_training.py      # Integration tests
-├── slurm/
-│   ├── sweep_all_modes.sh    # Full architecture comparison
-│   └── evaluate.sh           # Evaluation job
-├── .github/workflows/ci.yml  # GitHub Actions CI
+│   ├── evaluate_physical.py  # Mag-space metrics + light curve plots
+│   ├── visualize.py          # UMAP/t-SNE latent space plots
+│   ├── generate_surveysim.py # Synthetic data via survey-sim
+│   └── generate_synthetic.py # Synthetic data via parametric models
+├── tests/                    # 71 unit/integration tests
+├── slurm/                    # OzSTAR job scripts
+├── .github/workflows/ci.yml  # GitHub Actions CI (pytest + ruff)
 ├── pyproject.toml
-├── runs/                     # Trained models + embeddings (gitignored)
+├── runs/                     # Trained models (gitignored)
 └── analysis/                 # Results + plots (gitignored)
 ```

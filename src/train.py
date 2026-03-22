@@ -27,10 +27,17 @@ import time
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import ConcatDataset, DataLoader
 
 from dataset import AlertDataset, MetaNPZDataset, PhotoNPZDataset, collate_fn
 from model import LightCurveCompressor
+
+
+def _get_extra_args(batch, device):
+    """Extract optional tensors (images, GP features) from batch."""
+    images = batch["images"].to(device) if "images" in batch else None
+    gp_features = batch["gp_features"].to(device) if "gp_features" in batch else None
+    return images, gp_features
 
 
 def beta_schedule(epoch, total_epochs, target_beta, warmup_frac=0.2):
@@ -41,7 +48,15 @@ def beta_schedule(epoch, total_epochs, target_beta, warmup_frac=0.2):
 
 
 def train_one_epoch(
-    model, loader, optimizer, epoch, total_epochs, target_beta, device, grad_clip=1.0
+    model,
+    loader,
+    optimizer,
+    epoch,
+    total_epochs,
+    target_beta,
+    device,
+    grad_clip=1.0,
+    cls_weight=0.0,
 ):
     model.train()
     beta = (
@@ -54,9 +69,13 @@ def train_one_epoch(
     for batch in loader:
         x = batch["x"].to(device)
         pad_mask = batch["pad_mask"].to(device)
+        images, gp_features = _get_extra_args(batch, device)
 
-        out = model(x, pad_mask)
-        loss_dict = model.compute_loss(x, pad_mask, out, beta)
+        labels = batch["label_coarse"].to(device) if cls_weight > 0 else None
+        out = model(x, pad_mask, images, gp_features=gp_features)
+        loss_dict = model.compute_loss(
+            x, pad_mask, out, beta, labels=labels, cls_weight=cls_weight
+        )
 
         optimizer.zero_grad()
         loss_dict["total_loss"].backward()
@@ -72,7 +91,7 @@ def train_one_epoch(
 
 
 @torch.no_grad()
-def evaluate(model, loader, epoch, total_epochs, target_beta, device):
+def evaluate(model, loader, epoch, total_epochs, target_beta, device, cls_weight=0.0):
     model.eval()
     beta = (
         beta_schedule(epoch, total_epochs, target_beta) if model.mode == "vae" else 0.0
@@ -84,8 +103,9 @@ def evaluate(model, loader, epoch, total_epochs, target_beta, device):
     for batch in loader:
         x = batch["x"].to(device)
         pad_mask = batch["pad_mask"].to(device)
+        images, gp_features = _get_extra_args(batch, device)
 
-        out = model(x, pad_mask)
+        out = model(x, pad_mask, images, gp_features=gp_features)
         loss_dict = model.compute_loss(x, pad_mask, out, beta)
 
         for k, v in loss_dict.items():
@@ -104,8 +124,11 @@ def extract_embeddings(model, loader, device):
         for batch in loader:
             x = batch["x"].to(device)
             pad_mask = batch["pad_mask"].to(device)
-            emb = model.embed(x, pad_mask)
-            recon_err = model.reconstruction_error(x, pad_mask)
+            images, gp_features = _get_extra_args(batch, device)
+            emb = model.embed(x, pad_mask, images, gp_features=gp_features)
+            recon_err = model.reconstruction_error(
+                x, pad_mask, images, gp_features=gp_features
+            )
             all_emb.append(emb.cpu())
             all_recon.append(recon_err.cpu())
             all_fine.append(batch["label_fine"])
@@ -139,8 +162,33 @@ def train_model(
     splits_path=None,
     labels_dir=None,
     use_metadata=False,
+    use_images=False,
+    image_backbone="simple",
+    finetune_backbone=False,
+    use_gp=False,
+    gp_dim=114,
+    max_detections=None,
+    random_truncate=False,
+    min_detections=3,
+    cls_weight=0.0,
+    num_classes=5,
+    synthetic_dir=None,
 ):
-    suffix = "_meta" if use_metadata else ""
+    suffix = ""
+    if use_metadata:
+        suffix += "_meta"
+    if use_images:
+        suffix += "_img"
+        if finetune_backbone:
+            suffix += "_ft"
+    if use_gp:
+        suffix += "_gp"
+    if random_truncate:
+        suffix += "_randtrunc"
+    elif max_detections is not None:
+        suffix += f"_n{max_detections}"
+    if cls_weight > 0:
+        suffix += f"_cls{cls_weight}"
     run_dir = os.path.join(output_dir, f"{mode}_dim{latent_dim}{suffix}")
     os.makedirs(run_dir, exist_ok=True)
 
@@ -174,9 +222,27 @@ def train_model(
             horizon=horizon,
         )
     elif use_metadata:
-        train_ds = MetaNPZDataset(os.path.join(data_dir, "train"))
-        val_ds = MetaNPZDataset(os.path.join(data_dir, "val"))
-        test_ds = MetaNPZDataset(os.path.join(data_dir, "test"))
+        train_ds = MetaNPZDataset(
+            os.path.join(data_dir, "train"),
+            use_images=use_images,
+            use_gp=use_gp,
+            max_detections=max_detections,
+            random_truncate=random_truncate,
+            min_detections=min_detections,
+        )
+        # Val/test always use fixed max_detections (no random truncation)
+        val_ds = MetaNPZDataset(
+            os.path.join(data_dir, "val"),
+            use_images=use_images,
+            use_gp=use_gp,
+            max_detections=max_detections,
+        )
+        test_ds = MetaNPZDataset(
+            os.path.join(data_dir, "test"),
+            use_images=use_images,
+            use_gp=use_gp,
+            max_detections=max_detections,
+        )
     else:
         stats_path = os.path.join(data_dir, "feature_stats_day100.npz")
         if not os.path.exists(stats_path):
@@ -192,6 +258,20 @@ def train_model(
         )
 
     in_channels = train_ds.in_channels
+
+    # Optionally merge synthetic data into training set
+    if synthetic_dir is not None and os.path.isdir(
+        os.path.join(synthetic_dir, "train")
+    ):
+        syn_ds = MetaNPZDataset(
+            os.path.join(synthetic_dir, "train"),
+            use_images=use_images,
+            use_gp=use_gp,
+            random_truncate=random_truncate,
+            min_detections=min_detections,
+        )
+        print(f"  Adding {len(syn_ds)} synthetic sources to training set")
+        train_ds = ConcatDataset([train_ds, syn_ds])
 
     pin = device != "cpu"
     train_loader = DataLoader(
@@ -226,6 +306,11 @@ def train_model(
         d_model=d_model,
         num_codes=num_codes,
         commitment_cost=commitment_cost,
+        use_images=use_images,
+        image_backbone=image_backbone,
+        freeze_backbone=not finetune_backbone if use_images else None,
+        gp_dim=gp_dim if use_gp else 0,
+        num_classes=num_classes if cls_weight > 0 else 0,
     ).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-2)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -252,9 +337,18 @@ def train_model(
     for epoch in range(epochs):
         t0 = time.time()
         train_m = train_one_epoch(
-            model, train_loader, optimizer, epoch, epochs, target_beta, device
+            model,
+            train_loader,
+            optimizer,
+            epoch,
+            epochs,
+            target_beta,
+            device,
+            cls_weight=cls_weight,
         )
-        val_m = evaluate(model, val_loader, epoch, epochs, target_beta, device)
+        val_m = evaluate(
+            model, val_loader, epoch, epochs, target_beta, device, cls_weight=cls_weight
+        )
         scheduler.step()
         dt = time.time() - t0
 
@@ -291,7 +385,15 @@ def train_model(
     model.load_state_dict(
         torch.load(os.path.join(run_dir, "best_model.pt"), weights_only=True)
     )
-    test_m = evaluate(model, test_loader, best_epoch, epochs, target_beta, device)
+    test_m = evaluate(
+        model,
+        test_loader,
+        best_epoch,
+        epochs,
+        target_beta,
+        device,
+        cls_weight=cls_weight,
+    )
 
     # Extract embeddings for downstream evaluation
     test_data = extract_embeddings(model, test_loader, device)
@@ -307,6 +409,10 @@ def train_model(
         "in_channels": in_channels,
         "d_model": d_model,
         "use_metadata": use_metadata,
+        "use_images": use_images,
+        "use_gp": use_gp,
+        "gp_dim": gp_dim if use_gp else 0,
+        "max_detections": max_detections,
         "n_params": n_params,
         "best_epoch": best_epoch,
         "target_beta": target_beta if mode == "vae" else None,
@@ -374,6 +480,67 @@ def main():
         action="store_true",
         help="Include alert metadata in encoder input",
     )
+    parser.add_argument(
+        "--use-images",
+        action="store_true",
+        help="Include cutout images in encoder input (requires preprocessed data with images)",
+    )
+    parser.add_argument(
+        "--image-backbone",
+        choices=["simple", "zoobot"],
+        default="simple",
+        help="Image tower backbone: simple (4-layer CNN) or zoobot (Galaxy Zoo pretrained ConvNeXt)",
+    )
+    parser.add_argument(
+        "--finetune-backbone",
+        action="store_true",
+        help="Fine-tune the pretrained image backbone (default: frozen)",
+    )
+    parser.add_argument(
+        "--use-gp",
+        action="store_true",
+        help="Include GP features from lightcurve-fitting in encoder input",
+    )
+    parser.add_argument(
+        "--gp-dim",
+        type=int,
+        default=114,
+        help="Number of GP features (from extract_features output)",
+    )
+    parser.add_argument(
+        "--max-detections",
+        type=int,
+        default=None,
+        help="Truncate each source to first N observations (fixed, for evaluation)",
+    )
+    parser.add_argument(
+        "--cls-weight",
+        type=float,
+        default=0.0,
+        help="Weight for joint classification loss (0=reconstruction only)",
+    )
+    parser.add_argument(
+        "--num-classes",
+        type=int,
+        default=5,
+        help="Number of classes for joint classification (default: 5 coarse)",
+    )
+    parser.add_argument(
+        "--synthetic-dir",
+        default=None,
+        help="Path to synthetic data dir (from generate_synthetic.py). Merged into training set.",
+    )
+    parser.add_argument(
+        "--random-truncate",
+        action="store_true",
+        help="Randomly truncate each source to [min-det, L] per epoch (variable-length training)",
+    )
+    parser.add_argument(
+        "--min-detections",
+        type=int,
+        default=3,
+        help="Minimum detections when using --random-truncate",
+    )
     args = parser.parse_args()
 
     all_summaries = []
@@ -397,6 +564,17 @@ def main():
             splits_path=args.splits,
             labels_dir=args.labels_dir,
             use_metadata=args.use_metadata,
+            use_images=args.use_images,
+            image_backbone=args.image_backbone,
+            finetune_backbone=args.finetune_backbone,
+            use_gp=args.use_gp,
+            gp_dim=args.gp_dim,
+            max_detections=args.max_detections,
+            random_truncate=args.random_truncate,
+            min_detections=args.min_detections,
+            cls_weight=args.cls_weight,
+            num_classes=args.num_classes,
+            synthetic_dir=args.synthetic_dir,
         )
         all_summaries.append(s)
 

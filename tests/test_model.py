@@ -298,3 +298,180 @@ def test_save_load_roundtrip(sample_batch, tmp_path):
     emb_after = model2.embed(x, pad)
 
     assert torch.allclose(emb_before, emb_after)
+
+
+# ---------------------------------------------------------------------------
+# Image tower
+# ---------------------------------------------------------------------------
+
+
+class TestImageTower:
+    def test_output_shape(self):
+        from model import ImageTower
+
+        tower = ImageTower(d_model=32)
+        imgs = torch.randn(8, 3, 63, 63)
+        out = tower(imgs)
+        assert out.shape == (8, 32)
+
+    def test_gradient_flow(self):
+        from model import ImageTower
+
+        tower = ImageTower(d_model=32)
+        imgs = torch.randn(4, 3, 63, 63, requires_grad=True)
+        out = tower(imgs)
+        out.sum().backward()
+        assert imgs.grad is not None
+
+
+# ---------------------------------------------------------------------------
+# Multimodal: images
+# ---------------------------------------------------------------------------
+
+
+class TestWithImages:
+    def test_forward(self, sample_batch_images):
+        model = LightCurveCompressor(
+            mode="ae",
+            latent_dim=16,
+            in_channels=37,
+            d_model=32,
+            n_heads=4,
+            enc_layers=1,
+            dec_layers=1,
+            use_images=True,
+        )
+        b = sample_batch_images
+        out = model(b["x"], b["pad_mask"], b["images"])
+        assert out[0].shape == (4, 15, 4)
+        assert out[2].shape == (4, 16)
+
+    def test_embed(self, sample_batch_images):
+        model = LightCurveCompressor(
+            mode="ae",
+            latent_dim=16,
+            in_channels=37,
+            d_model=32,
+            n_heads=4,
+            enc_layers=1,
+            dec_layers=1,
+            use_images=True,
+        )
+        b = sample_batch_images
+        emb = model.embed(b["x"], b["pad_mask"], b["images"])
+        assert emb.shape == (4, 16)
+
+    def test_backward(self, sample_batch_images):
+        model = LightCurveCompressor(
+            mode="ae",
+            latent_dim=16,
+            in_channels=37,
+            d_model=32,
+            n_heads=4,
+            enc_layers=1,
+            dec_layers=1,
+            use_images=True,
+        )
+        b = sample_batch_images
+        out = model(b["x"], b["pad_mask"], b["images"])
+        loss = model.compute_loss(b["x"], b["pad_mask"], out)
+        loss["total_loss"].backward()
+        assert model.image_tower.cnn[0].weight.grad is not None
+
+
+# ---------------------------------------------------------------------------
+# Multimodal: GP features
+# ---------------------------------------------------------------------------
+
+
+class TestWithGP:
+    def test_forward(self, sample_batch_gp):
+        model = LightCurveCompressor(
+            mode="ae",
+            latent_dim=16,
+            in_channels=37,
+            d_model=32,
+            n_heads=4,
+            enc_layers=1,
+            dec_layers=1,
+            gp_dim=12,
+        )
+        b = sample_batch_gp
+        out = model(b["x"], b["pad_mask"], gp_features=b["gp_features"])
+        assert out[0].shape == (4, 15, 4)
+        assert out[2].shape == (4, 16)
+
+    def test_embed(self, sample_batch_gp):
+        model = LightCurveCompressor(
+            mode="ae",
+            latent_dim=16,
+            in_channels=37,
+            d_model=32,
+            n_heads=4,
+            enc_layers=1,
+            dec_layers=1,
+            gp_dim=12,
+        )
+        b = sample_batch_gp
+        emb = model.embed(b["x"], b["pad_mask"], gp_features=b["gp_features"])
+        assert emb.shape == (4, 16)
+
+    def test_backward(self, sample_batch_gp):
+        model = LightCurveCompressor(
+            mode="ae",
+            latent_dim=16,
+            in_channels=37,
+            d_model=32,
+            n_heads=4,
+            enc_layers=1,
+            dec_layers=1,
+            gp_dim=12,
+        )
+        b = sample_batch_gp
+        out = model(b["x"], b["pad_mask"], gp_features=b["gp_features"])
+        loss = model.compute_loss(b["x"], b["pad_mask"], out)
+        loss["total_loss"].backward()
+        assert model.gp_proj[0].weight.grad is not None
+
+
+# ---------------------------------------------------------------------------
+# Full multimodal: images + GP
+# ---------------------------------------------------------------------------
+
+
+class TestAllModalities:
+    def test_forward(self, sample_batch_all):
+        model = LightCurveCompressor(
+            mode="ae",
+            latent_dim=16,
+            in_channels=37,
+            d_model=32,
+            n_heads=4,
+            enc_layers=1,
+            dec_layers=1,
+            use_images=True,
+            gp_dim=12,
+        )
+        b = sample_batch_all
+        out = model(b["x"], b["pad_mask"], b["images"], gp_features=b["gp_features"])
+        assert out[0].shape == (4, 15, 4)
+
+    def test_backward(self, sample_batch_all):
+        model = LightCurveCompressor(
+            mode="ae",
+            latent_dim=16,
+            in_channels=37,
+            d_model=32,
+            n_heads=4,
+            enc_layers=1,
+            dec_layers=1,
+            use_images=True,
+            gp_dim=12,
+        )
+        b = sample_batch_all
+        out = model(b["x"], b["pad_mask"], b["images"], gp_features=b["gp_features"])
+        loss = model.compute_loss(b["x"], b["pad_mask"], out)
+        loss["total_loss"].backward()
+        assert model.image_tower.cnn[0].weight.grad is not None
+        assert model.gp_proj[0].weight.grad is not None
+        assert model.in_proj.weight.grad is not None

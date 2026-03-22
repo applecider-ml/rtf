@@ -108,6 +108,127 @@ class VectorQuantizer(nn.Module):
         return z_q_st, vq_loss, indices
 
 
+class ImageTower(nn.Module):
+    """CNN for 63x63 cutout stamps → d_model embedding.
+
+    Supports two backends:
+      - "simple": lightweight 4-layer CNN (~260K params), trained from scratch
+      - "zoobot": Galaxy Zoo pretrained ConvNeXt-pico via timm (~8.5M params)
+
+    Processes (science, template, difference) 3-channel stamps.
+    Applied per-observation in the sequence, so input is (B*L, 3, 63, 63).
+    """
+
+    def __init__(
+        self,
+        d_model: int = 128,
+        dropout: float = 0.2,
+        backbone: str = "simple",
+        freeze_backbone: bool = True,
+    ):
+        super().__init__()
+        self.backbone_name = backbone
+        self.freeze_backbone = freeze_backbone
+
+        if backbone == "zoobot":
+            self._init_zoobot(d_model, dropout, freeze_backbone)
+        else:
+            self._init_simple(d_model, dropout)
+
+    def _init_simple(self, d_model, dropout):
+        self.cnn = nn.Sequential(
+            nn.Conv2d(3, 32, 3, stride=2, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, 3, stride=2, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.Conv2d(64, 128, 3, stride=2, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.Conv2d(128, 128, 3, stride=2, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d(1),
+        )
+        self.proj = nn.Sequential(
+            nn.Flatten(),
+            nn.Dropout(dropout),
+            nn.Linear(128, d_model),
+        )
+
+    def _init_zoobot(self, d_model, dropout, freeze_backbone):
+        try:
+            import timm
+        except ImportError:
+            raise ImportError(
+                "timm is required for zoobot backbone. Install with: pip install timm"
+            )
+
+        # Load ConvNeXt-pico pretrained on Galaxy Zoo via Zoobot
+        # Falls back to ImageNet pretrained if Zoobot weights not available
+        try:
+            self.cnn = timm.create_model(
+                "hf_hub:mwalmsley/zoobot-encoder-convnext_pico",
+                pretrained=True,
+                num_classes=0,  # remove classification head, get features
+            )
+        except Exception:
+            print(
+                "  Warning: Zoobot weights not available, using ImageNet ConvNeXt-pico"
+            )
+            self.cnn = timm.create_model(
+                "convnext_pico", pretrained=True, num_classes=0
+            )
+
+        if freeze_backbone:
+            for param in self.cnn.parameters():
+                param.requires_grad = False
+
+        # The backbone outputs a feature vector; project to d_model
+        feat_dim = self.cnn.num_features
+        self.proj = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(feat_dim, d_model),
+        )
+
+    def _run_cnn_subbatch(
+        self, images: torch.Tensor, max_sub: int = 32
+    ) -> torch.Tensor:
+        """Run CNN in sub-batches, with or without gradients."""
+        if self.freeze_backbone:
+            # No gradients needed for frozen backbone
+            ctx = torch.no_grad
+        else:
+            # Use gradient checkpointing to save memory during fine-tuning
+            from contextlib import nullcontext
+
+            ctx = nullcontext
+
+        feats = []
+        for i in range(0, images.shape[0], max_sub):
+            chunk = images[i : i + max_sub]
+            with ctx():
+                if not self.freeze_backbone and hasattr(torch.utils, "checkpoint"):
+                    feat = torch.utils.checkpoint.checkpoint(
+                        self.cnn, chunk, use_reentrant=False
+                    )
+                else:
+                    feat = self.cnn(chunk)
+            feats.append(feat)
+        return torch.cat(feats, dim=0)
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        """images: (N, 3, 63, 63) → (N, d_model)"""
+        if self.backbone_name == "zoobot":
+            images = F.interpolate(
+                images, size=(224, 224), mode="bilinear", align_corners=False
+            )
+            cnn_out = self._run_cnn_subbatch(images)
+            return self.proj(cnn_out)
+        return self.proj(self.cnn(images))
+
+
 class LightCurveCompressor(nn.Module):
     """
     Unified transformer autoencoder for light curve compression.
@@ -116,6 +237,9 @@ class LightCurveCompressor(nn.Module):
         "ae"    — deterministic autoencoder
         "vae"   — variational autoencoder with KL regularization
         "vqvae" — vector-quantized VAE with discrete codebook
+
+    If use_images=True, a CNN image tower processes per-observation cutout stamps
+    and adds image embeddings to the sequence representation before the transformer.
     """
 
     def __init__(
@@ -135,6 +259,14 @@ class LightCurveCompressor(nn.Module):
         # VQ-VAE-specific
         num_codes: int = 512,
         commitment_cost: float = 0.25,
+        # Image tower
+        use_images: bool = False,
+        image_backbone: str = "simple",
+        freeze_backbone: bool = None,  # None = auto (freeze for zoobot, not for simple)
+        # GP features
+        gp_dim: int = 0,
+        # Classification head (joint training)
+        num_classes: int = 0,
     ):
         super().__init__()
         assert mode in ("ae", "vae", "vqvae"), f"Unknown mode: {mode}"
@@ -144,6 +276,30 @@ class LightCurveCompressor(nn.Module):
         self.d_model = d_model
         self.max_len = max_len
         self.free_bits = free_bits
+        self.use_images = use_images
+        self.gp_dim = gp_dim
+        self.num_classes = num_classes
+
+        # --- Image tower (optional) ---
+        if use_images:
+            freeze = (
+                freeze_backbone
+                if freeze_backbone is not None
+                else (image_backbone == "zoobot")
+            )
+            self.image_tower = ImageTower(
+                d_model, dropout, backbone=image_backbone, freeze_backbone=freeze
+            )
+
+        # --- GP feature projection (optional) ---
+        # Projects static per-source GP features and adds to CLS token
+        if gp_dim > 0:
+            self.gp_proj = nn.Sequential(
+                nn.Linear(gp_dim, d_model),
+                nn.LayerNorm(d_model),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+            )
 
         # --- Encoder ---
         self.in_proj = nn.Linear(in_channels, d_model)
@@ -172,6 +328,15 @@ class LightCurveCompressor(nn.Module):
             self.pre_vq_proj = nn.Linear(d_model, latent_dim)
             self.vq = VectorQuantizer(num_codes, latent_dim, commitment_cost)
 
+        # --- Classification head (optional, for joint training) ---
+        if num_classes > 0:
+            self.cls_head = nn.Sequential(
+                nn.Linear(latent_dim, latent_dim),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(latent_dim, num_classes),
+            )
+
         # --- Decoder ---
         self.z_proj = nn.Linear(latent_dim, d_model)
         self.pos_embed = nn.Parameter(torch.zeros(1, max_len, d_model))
@@ -191,17 +356,49 @@ class LightCurveCompressor(nn.Module):
         self.head_cont = nn.Linear(d_model, 4)
         self.head_band = nn.Linear(d_model, 3)
 
-    def _encode_cls(self, x: torch.Tensor, pad_mask: torch.Tensor) -> torch.Tensor:
-        """Run encoder, return CLS token representation."""
+    def _encode_cls(
+        self,
+        x: torch.Tensor,
+        pad_mask: torch.Tensor,
+        images: torch.Tensor = None,
+        gp_features: torch.Tensor = None,
+    ) -> torch.Tensor:
+        """Run encoder, return CLS token representation.
+
+        Images: (B, 3, 63, 63) — single most-recent stamp per source.
+        GP features: (B, gp_dim) — static per-source vector.
+        Both are fused additively with the CLS token after the transformer.
+        """
         B, L, _ = x.shape
         h = self.in_proj(x) + self.time2vec(x[..., 0])
+
         cls = self.cls_tok.expand(B, -1, -1)
         h = torch.cat([cls, h], dim=1)
         pad_ext = F.pad(pad_mask, (1, 0), value=False)
         z = self.encoder(h, src_key_padding_mask=pad_ext)
-        return self.enc_norm(z[:, 0])
+        cls_out = self.enc_norm(z[:, 0])
 
-    def encode(self, x: torch.Tensor, pad_mask: torch.Tensor):
+        # Fuse image embedding: most recent stamp only (matches alert packet)
+        # Process B images (not B*L), add to CLS token like GP features
+        if self.use_images and images is not None:
+            # images: (B, 3, 63, 63) — single stamp per source
+            img_emb = self.image_tower(images)  # (B, d_model)
+            cls_out = cls_out + img_emb
+
+        # Fuse GP features: additive to CLS token
+        if self.gp_dim > 0 and gp_features is not None:
+            gp_emb = self.gp_proj(gp_features)
+            cls_out = cls_out + gp_emb
+
+        return cls_out
+
+    def encode(
+        self,
+        x: torch.Tensor,
+        pad_mask: torch.Tensor,
+        images: torch.Tensor = None,
+        gp_features: torch.Tensor = None,
+    ):
         """
         Encode to latent representation.
 
@@ -210,7 +407,7 @@ class LightCurveCompressor(nn.Module):
             vae:   (mu, logvar)
             vqvae: (z_q, vq_loss, indices)
         """
-        cls_out = self._encode_cls(x, pad_mask)
+        cls_out = self._encode_cls(x, pad_mask, images, gp_features)
 
         if self.mode == "ae":
             z = self.bottleneck_proj(cls_out)
@@ -237,7 +434,13 @@ class LightCurveCompressor(nn.Module):
         h = self.dec_norm(self.decoder(h))
         return self.head_cont(h), self.head_band(h)
 
-    def forward(self, x: torch.Tensor, pad_mask: torch.Tensor):
+    def forward(
+        self,
+        x: torch.Tensor,
+        pad_mask: torch.Tensor,
+        images: torch.Tensor = None,
+        gp_features: torch.Tensor = None,
+    ):
         """
         Full forward pass.
 
@@ -250,18 +453,18 @@ class LightCurveCompressor(nn.Module):
         L = x.shape[1]
 
         if self.mode == "ae":
-            (z,) = self.encode(x, pad_mask)
+            (z,) = self.encode(x, pad_mask, images, gp_features)
             cont_hat, band_logits = self.decode(z)
             return cont_hat[:, :L], band_logits[:, :L], z
 
         elif self.mode == "vae":
-            mu, logvar = self.encode(x, pad_mask)
+            mu, logvar = self.encode(x, pad_mask, images, gp_features)
             z = self.reparameterize(mu, logvar)
             cont_hat, band_logits = self.decode(z)
             return cont_hat[:, :L], band_logits[:, :L], mu, logvar
 
         elif self.mode == "vqvae":
-            z_q, vq_loss, indices = self.encode(x, pad_mask)
+            z_q, vq_loss, indices = self.encode(x, pad_mask, images, gp_features)
             cont_hat, band_logits = self.decode(z_q)
             return cont_hat[:, :L], band_logits[:, :L], vq_loss, indices
 
@@ -271,15 +474,19 @@ class LightCurveCompressor(nn.Module):
         pad_mask: torch.Tensor,
         forward_out: tuple,
         beta: float = 1.0,
+        labels: torch.Tensor = None,
+        cls_weight: float = 0.0,
     ) -> dict:
         """
         Compute loss for any mode.
 
         Args:
-            x: (B, L, 7) input
+            x: (B, L, C) input
             pad_mask: (B, L) padding mask
             forward_out: output tuple from forward()
             beta: KL weight (VAE only)
+            labels: (B,) class labels for joint classification (optional)
+            cls_weight: weight for classification loss (0 = reconstruction only)
         """
         valid = ~pad_mask
         n_valid = valid.sum().clamp(min=1)
@@ -317,14 +524,41 @@ class LightCurveCompressor(nn.Module):
             (band_logits.argmax(-1) == band_target) * valid
         ).sum().item() / n_valid.item()
 
+        # Extract latent vector for classification (same for all modes)
+        if self.mode == "ae":
+            z_cls = z
+        elif self.mode == "vae":
+            z_cls = mu
+        elif self.mode == "vqvae":
+            # vq_loss and indices are in forward_out[2:], z_q was used for decoding
+            # Recompute from forward_out — the quantized vector is what was decoded from
+            z_cls = None  # VQ-VAE cls not supported yet
+
+        # Classification loss (optional joint training)
+        cls_loss_val = 0.0
+        cls_acc = 0.0
+        cls_loss_tensor = torch.tensor(0.0, device=x.device)
+        if (
+            self.num_classes > 0
+            and labels is not None
+            and cls_weight > 0
+            and z_cls is not None
+        ):
+            cls_logits = self.cls_head(z_cls)
+            cls_loss_tensor = F.cross_entropy(cls_logits, labels)
+            cls_loss_val = cls_loss_tensor.item()
+            cls_acc = (cls_logits.argmax(-1) == labels).float().mean().item()
+
         # Mode-specific regularization
         if self.mode == "ae":
-            total = recon_cont + recon_band
+            total = recon_cont + recon_band + cls_weight * cls_loss_tensor
             return {
                 "total_loss": total,
                 "recon_cont": recon_cont.item(),
                 "recon_band": recon_band.item(),
                 "band_acc": band_acc,
+                "cls_loss": cls_loss_val,
+                "cls_acc": cls_acc,
                 "beta": 0.0,
                 "kld": 0.0,
                 "vq_loss": 0.0,
@@ -336,7 +570,7 @@ class LightCurveCompressor(nn.Module):
             if self.free_bits > 0:
                 kld_per_dim = kld_per_dim.clamp(min=self.free_bits)
             kld = kld_per_dim.sum(-1).mean()
-            total = recon_cont + recon_band + beta * kld
+            total = recon_cont + recon_band + beta * kld + cls_weight * cls_loss_tensor
             return {
                 "total_loss": total,
                 "recon_cont": recon_cont.item(),
@@ -344,12 +578,14 @@ class LightCurveCompressor(nn.Module):
                 "kld": kld.item(),
                 "beta": beta,
                 "band_acc": band_acc,
+                "cls_loss": cls_loss_val,
+                "cls_acc": cls_acc,
                 "vq_loss": 0.0,
                 **per_ch,
             }
 
         elif self.mode == "vqvae":
-            total = recon_cont + recon_band + vq_loss
+            total = recon_cont + recon_band + vq_loss + cls_weight * cls_loss_tensor
             # Codebook utilization
             n_unique = indices.unique().numel()
             return {
@@ -360,14 +596,22 @@ class LightCurveCompressor(nn.Module):
                 "codebook_usage": n_unique,
                 "beta": 0.0,
                 "kld": 0.0,
+                "cls_loss": cls_loss_val,
+                "cls_acc": cls_acc,
                 "band_acc": band_acc,
                 **per_ch,
             }
 
     @torch.no_grad()
-    def embed(self, x: torch.Tensor, pad_mask: torch.Tensor) -> torch.Tensor:
+    def embed(
+        self,
+        x: torch.Tensor,
+        pad_mask: torch.Tensor,
+        images: torch.Tensor = None,
+        gp_features: torch.Tensor = None,
+    ) -> torch.Tensor:
         """Encode to latent vector (deterministic). Use for downstream tasks."""
-        cls_out = self._encode_cls(x, pad_mask)
+        cls_out = self._encode_cls(x, pad_mask, images, gp_features)
         if self.mode == "ae":
             return self.bottleneck_proj(cls_out)
         elif self.mode == "vae":
@@ -379,10 +623,14 @@ class LightCurveCompressor(nn.Module):
 
     @torch.no_grad()
     def reconstruction_error(
-        self, x: torch.Tensor, pad_mask: torch.Tensor
+        self,
+        x: torch.Tensor,
+        pad_mask: torch.Tensor,
+        images: torch.Tensor = None,
+        gp_features: torch.Tensor = None,
     ) -> torch.Tensor:
         """Per-sample reconstruction error (anomaly score)."""
-        z = self.embed(x, pad_mask)
+        z = self.embed(x, pad_mask, images, gp_features)
         cont_hat, band_logits = self.decode(z)
         L = x.shape[1]
         cont_hat, band_logits = cont_hat[:, :L], band_logits[:, :L]

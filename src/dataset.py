@@ -240,20 +240,38 @@ class AlertDataset(Dataset):
 
 class MetaNPZDataset(Dataset):
     """
-    Loads pre-processed NPZ files with photometry + metadata.
+    Loads pre-processed NPZ files with photometry + metadata + images + GP features.
 
     Each NPZ contains:
-        x:     (L, 37) float32 — ready for model input
-        label: int64
+        x:           (L, 37) float32 — sequence features
+        images:      (L, 3, 63, 63) float32 — cutout stamps (if available)
+        has_image:   (L,) float32 — 1.0 where image is valid
+        gp_features: (N_GP,) float32 — GP features from lightcurve-fitting (if available)
+        gp_keys:     string array — feature names (for reference)
+        label:       int64
 
     Created by preprocess_alerts.py from raw alerts.npy files.
     """
 
     COARSE_MAP = {0: 0, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 2, 8: 3, 9: 4}
 
-    def __init__(self, data_dir: str, max_len: int = 257):
+    def __init__(
+        self,
+        data_dir: str,
+        max_len: int = 257,
+        use_images: bool = False,
+        use_gp: bool = False,
+        max_detections: int = None,
+        random_truncate: bool = False,
+        min_detections: int = 3,
+    ):
+        self.use_gp = use_gp
         self.data_dir = Path(data_dir)
         self.max_len = max_len
+        self.use_images = use_images
+        self.max_detections = max_detections
+        self.random_truncate = random_truncate
+        self.min_detections = min_detections
         self.in_channels = IN_CHANNELS_META
 
         candidates = sorted(list(self.data_dir.glob("*.npz")))
@@ -269,13 +287,20 @@ class MetaNPZDataset(Dataset):
             return self._load_item(idx)
         except Exception:
             x = torch.zeros(1, self.in_channels)
-            return {
+            result = {
                 "x": x,
                 "label_fine": 0,
                 "label_coarse": 0,
                 "obj_id": "BAD",
                 "seq_len": 1,
             }
+            if self.use_images:
+                result["image"] = torch.zeros(3, 63, 63)
+            if self.use_gp:
+                result["gp_features"] = torch.zeros(
+                    1
+                )  # placeholder, real size set at collate
+            return result
 
     def _load_item(self, idx):
         npz = np.load(self.files[idx], allow_pickle=True)
@@ -283,15 +308,97 @@ class MetaNPZDataset(Dataset):
         label = int(npz["label"])
 
         L = min(x.shape[0], self.max_len)
+        if self.max_detections is not None:
+            L = min(L, self.max_detections)
+        if self.random_truncate and L > self.min_detections:
+            # Randomly truncate to [min_detections, L] observations
+            # Simulates seeing the source at different "ages"
+            import random
+
+            L = random.randint(self.min_detections, L)
         x = x[:L]
 
-        return {
+        # Normalize metadata channels to prevent gradient explosion.
+        # Base channels (0:4) are log-transformed, (4:7) are one-hot.
+        # Metadata channels (7:) have mixed scales (0-300+), so we
+        # apply per-feature robust scaling within each sample.
+        if x.shape[1] > 7:
+            meta = x[:, 7:]
+            # Per-feature: center on median, scale by IQR (robust to outliers)
+            for j in range(meta.shape[1]):
+                col = meta[:, j]
+                med = np.median(col)
+                iqr = np.percentile(col, 75) - np.percentile(col, 25)
+                if iqr > 1e-6:
+                    meta[:, j] = (col - med) / iqr
+                else:
+                    meta[:, j] = col - med
+            # Final clip for safety
+            x[:, 7:] = np.clip(meta, -10.0, 10.0)
+
+        result = {
             "x": torch.from_numpy(x),
             "label_fine": label,
             "label_coarse": self.COARSE_MAP.get(label, 0),
             "obj_id": self.files[idx].stem,
             "seq_len": L,
         }
+
+        if self.use_images and "images" in npz:
+            all_images = npz["images"][:L].astype(np.float32)
+            all_has_image = npz["has_image"][:L].astype(np.float32)
+            # Use the most recent stamp with a valid image (matches alert packet)
+            valid_idx = np.where(all_has_image > 0)[0]
+            if len(valid_idx) > 0:
+                img = all_images[valid_idx[-1]]  # most recent valid stamp (3, 63, 63)
+                # Normalize per-channel
+                for c in range(3):
+                    ch = img[c].astype(np.float64)
+                    p1, p99 = np.percentile(ch, [1, 99])
+                    ch = np.clip(ch, p1, p99)
+                    std = ch.std()
+                    if std > 1e-6:
+                        img[c] = ((ch - ch.mean()) / std).astype(np.float32)
+                    else:
+                        img[c] = 0.0
+                result["image"] = torch.from_numpy(img)
+            else:
+                result["image"] = torch.zeros(3, 63, 63)
+        elif self.use_images:
+            result["image"] = torch.zeros(3, 63, 63)
+
+        if self.use_gp and "gp_features" in npz:
+            gp = npz["gp_features"].astype(np.float32)
+            gp_keys = list(npz["gp_keys"]) if "gp_keys" in npz else []
+            gp = np.nan_to_num(gp, nan=0.0, posinf=0.0, neginf=0.0)
+            gp = np.clip(gp, -10.0, 10.0)
+            # Map to canonical 114-dim vector by key name
+            if len(gp_keys) == 114:
+                result["gp_features"] = torch.from_numpy(gp)
+            else:
+                # Build canonical key→index mapping on first call
+                if not hasattr(self, "_canonical_gp_keys"):
+                    self._canonical_gp_keys = None
+                    # Find a source with 114 keys to establish canonical order
+                    for f in self.files[:100]:
+                        n = np.load(f, allow_pickle=True)
+                        if "gp_keys" in n and len(n["gp_keys"]) == 114:
+                            self._canonical_gp_keys = {
+                                k: i for i, k in enumerate(n["gp_keys"])
+                            }
+                            break
+                gp_padded = np.zeros(114, dtype=np.float32)
+                if self._canonical_gp_keys is not None:
+                    for j, key in enumerate(gp_keys):
+                        if key in self._canonical_gp_keys:
+                            gp_padded[self._canonical_gp_keys[key]] = gp[j]
+                else:
+                    gp_padded[: len(gp)] = gp  # fallback
+                result["gp_features"] = torch.from_numpy(gp_padded)
+        elif self.use_gp:
+            result["gp_features"] = torch.zeros(114)
+
+        return result
 
 
 # ---------------------------------------------------------------------------
@@ -409,12 +516,16 @@ def collate_fn(batch):
     max_len = max(item["seq_len"] for item in batch)
     B = len(batch)
     C = batch[0]["x"].shape[1]
+    has_image = "image" in batch[0]
 
     x_padded = torch.zeros(B, max_len, C)
     pad_mask = torch.ones(B, max_len, dtype=torch.bool)
     labels_fine = torch.zeros(B, dtype=torch.long)
     labels_coarse = torch.zeros(B, dtype=torch.long)
     obj_ids = []
+
+    if has_image:
+        images = torch.zeros(B, 3, 63, 63)
 
     for i, item in enumerate(batch):
         L = item["seq_len"]
@@ -423,11 +534,26 @@ def collate_fn(batch):
         labels_fine[i] = item["label_fine"]
         labels_coarse[i] = item["label_coarse"]
         obj_ids.append(item["obj_id"])
+        if has_image:
+            images[i] = item["image"]
 
-    return {
+    result = {
         "x": x_padded,
         "pad_mask": pad_mask,
         "label_fine": labels_fine,
         "label_coarse": labels_coarse,
         "obj_ids": obj_ids,
     }
+    if has_image:
+        result["images"] = images
+
+    # GP features: static per-source vector, pad to max GP dim in batch
+    if "gp_features" in batch[0]:
+        gp_dim = max(item["gp_features"].shape[0] for item in batch)
+        gp_padded = torch.zeros(B, gp_dim)
+        for i, item in enumerate(batch):
+            gp = item["gp_features"]
+            gp_padded[i, : gp.shape[0]] = gp
+        result["gp_features"] = gp_padded
+
+    return result
