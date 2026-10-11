@@ -42,7 +42,8 @@ jobs:
           python-version: "3.12"
 
       - name: Install ruff
-        run: pip install ruff
+        # Pinned so the rules do not change under the repo between releases.
+        run: pip install ruff==0.17.0
 
       - name: Lint
         run: ruff check src/ tests/

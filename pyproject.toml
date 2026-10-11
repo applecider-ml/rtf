@@ -25,6 +25,11 @@ addopts = "-v --tb=short"
 line-length = 100
 
 [tool.ruff.lint]
+# Stated outright rather than left to ruff's defaults: those change between
+# releases, so an unpinned ruff in CI quietly enforces a different set over
+# time. E402 left the default set in 0.17 while still being implemented, which
+# is how a file could pass one release and fail the next.
+select = ["E4", "E7", "E9", "F", "RUF012", "RUF100"]
 ignore = [
     "BLE001",  # broad exception catches are intentional in data pipelines
     "S112",    # try-except-continue is intentional for skipping bad samples
