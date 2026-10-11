@@ -10,6 +10,7 @@ Usage:
         --fritz-token YOUR_TOKEN \
         --output-dir /path/to/output
 """
+
 import argparse
 import json
 import os
@@ -54,24 +55,47 @@ FEAT_STD = np.array([1.1197281, 0.72683305, 0.4150701, 0.03053664], dtype=np.flo
 # Fritz class name -> TEMPO broad class
 FRITZ_TO_TEMPO = {
     # SNI (Type I)
-    "SN Ia": "SNI", "SN Ia-91T-like": "SNI", "SN Ia-91bg-like": "SNI",
-    "SN Ia-CSM": "SNI", "SN Ia-pec": "SNI", "SN Ia-02cx-like": "SNI",
-    "SN Iax[02cx-like]": "SNI", "SN Ia-SC": "SNI",
-    "SN Ib": "SNI", "SN Ib-pec": "SNI", "SN Ib/c": "SNI",
-    "SN Ic": "SNI", "SN Ic-BL": "SNI", "SN Ic-pec": "SNI",
+    "SN Ia": "SNI",
+    "SN Ia-91T-like": "SNI",
+    "SN Ia-91bg-like": "SNI",
+    "SN Ia-CSM": "SNI",
+    "SN Ia-pec": "SNI",
+    "SN Ia-02cx-like": "SNI",
+    "SN Iax[02cx-like]": "SNI",
+    "SN Ia-SC": "SNI",
+    "SN Ib": "SNI",
+    "SN Ib-pec": "SNI",
+    "SN Ib/c": "SNI",
+    "SN Ic": "SNI",
+    "SN Ic-BL": "SNI",
+    "SN Ic-pec": "SNI",
     "SN I": "SNI",
     # SNII (Type II)
-    "SN II": "SNII", "SN IIP": "SNII", "SN IIL": "SNII",
-    "SN IIn": "SNII", "SN IIb": "SNII", "SN II-pec": "SNII",
-    "SN IIn-pec": "SNII", "SLSN-II": "SNII", "SLSN-I": "SNI",
+    "SN II": "SNII",
+    "SN IIP": "SNII",
+    "SN IIL": "SNII",
+    "SN IIn": "SNII",
+    "SN IIb": "SNII",
+    "SN II-pec": "SNII",
+    "SN IIn-pec": "SNII",
+    "SLSN-II": "SNII",
+    "SLSN-I": "SNI",
     # TDE
-    "TDE": "TDE", "Tidal Disruption Event": "TDE",
+    "TDE": "TDE",
+    "Tidal Disruption Event": "TDE",
     # AGN
-    "AGN": "AGN", "QSO": "AGN", "Blazar": "AGN", "Seyfert": "AGN",
+    "AGN": "AGN",
+    "QSO": "AGN",
+    "Blazar": "AGN",
+    "Seyfert": "AGN",
     "LINER": "AGN",
     # CV
-    "CV": "CV", "Cataclysmic Variable": "CV", "Nova": "CV",
-    "Cataclysmic": "CV", "CV*": "CV", "dwarf nova": "CV",
+    "CV": "CV",
+    "Cataclysmic Variable": "CV",
+    "Nova": "CV",
+    "Cataclysmic": "CV",
+    "CV*": "CV",
+    "dwarf nova": "CV",
 }
 
 # fid -> band_id (ZTF filter IDs)
@@ -87,16 +111,14 @@ def extract_photometry_from_alert(alert):
     if cand.get("magpsf") is not None and cand.get("sigmapsf") is not None:
         fid = cand.get("fid", 2)
         bid = FID_TO_BAND.get(fid, 1)
-        detections.append((cand["jd"], float(cand["magpsf"]),
-                           float(cand["sigmapsf"]), bid))
+        detections.append((cand["jd"], float(cand["magpsf"]), float(cand["sigmapsf"]), bid))
 
     # Previous candidates
-    for prv in (alert.get("prv_candidates") or []):
+    for prv in alert.get("prv_candidates") or []:
         if prv.get("magpsf") is not None and prv.get("sigmapsf") is not None:
             fid = prv.get("fid", 2)
             bid = FID_TO_BAND.get(fid, 1)
-            detections.append((prv["jd"], float(prv["magpsf"]),
-                               float(prv["sigmapsf"]), bid))
+            detections.append((prv["jd"], float(prv["magpsf"]), float(prv["sigmapsf"]), bid))
 
     return detections
 
@@ -134,11 +156,11 @@ def build_tempo_input(detections):
         dt = jd - jd0
         dt_prev = jd - dets[i - 1][0] if i > 0 else 0.0
 
-        raw[i, 0] = np.log1p(dt)           # log1p(dt_first)
-        raw[i, 1] = np.log1p(dt_prev)      # log1p(dt_prev)
-        raw[i, 2] = (23.9 - mag) / 2.5     # log10(flux_uJy)
-        raw[i, 3] = 0.4 * sig              # log_flux_err
-        raw[i, 4] = bid                    # band_id
+        raw[i, 0] = np.log1p(dt)  # log1p(dt_first)
+        raw[i, 1] = np.log1p(dt_prev)  # log1p(dt_prev)
+        raw[i, 2] = (23.9 - mag) / 2.5  # log10(flux_uJy)
+        raw[i, 3] = 0.4 * sig  # log_flux_err
+        raw[i, 4] = bid  # band_id
 
     # Compute global features from raw
     gf = compute_global_features(raw)
@@ -193,10 +215,10 @@ def compute_global_features(raw):
     # Enhanced (8)
     idx_peak = int(np.argmax(logf))
     peak_t = dt_first[idx_peak]
-    out[8] = peak_t / max(duration, 1e-6)   # peak_frac
-    out[9] = logf[idx_peak]                  # peak_flux
-    out[10] = float(np.median(dt_prev))      # med_dt_prev
-    out[11] = float(np.std(logf))            # std_flux
+    out[8] = peak_t / max(duration, 1e-6)  # peak_frac
+    out[9] = logf[idx_peak]  # peak_flux
+    out[10] = float(np.median(dt_prev))  # med_dt_prev
+    out[11] = float(np.std(logf))  # std_flux
     out[12] = float(np.percentile(logf, 90) - np.percentile(logf, 10))  # iqr
 
     # Slopes
@@ -209,7 +231,7 @@ def compute_global_features(raw):
             return 0.0
         return float(((x - xm) * (y - ym)).sum() / sxx)
 
-    out[13] = safe_slope(dt_first[:idx_peak + 1], logf[:idx_peak + 1])
+    out[13] = safe_slope(dt_first[: idx_peak + 1], logf[: idx_peak + 1])
     out[14] = safe_slope(dt_first[idx_peak:], logf[idx_peak:])
     out[15] = out[13] / max(abs(out[14]), 1e-6)
 
@@ -239,7 +261,8 @@ def query_fritz_classifications(object_ids, token, batch_size=50):
         try:
             r = requests.get(
                 f"{base}/api/sources/{oid}/classifications",
-                headers=headers, timeout=30,
+                headers=headers,
+                timeout=30,
             )
             if r.status_code == 200:
                 data = r.json().get("data", [])
@@ -271,10 +294,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--tarball", help="Path to ztf_public_YYYYMMDD.tar.gz")
     parser.add_argument("--avro-dir", help="Path to extracted avro directory")
-    parser.add_argument("--onnx", default="/work/hdd/bcrv/kmajithia/tempo/onnx/tempo_classifier.onnx")
+    parser.add_argument(
+        "--onnx", default="/work/hdd/bcrv/kmajithia/tempo/onnx/tempo_classifier.onnx"
+    )
     parser.add_argument("--fritz-token", default=os.environ.get("FRITZ_TOKEN", ""))
-    parser.add_argument("--fritz-sample", type=int, default=500,
-                        help="Number of objects to query Fritz for")
+    parser.add_argument(
+        "--fritz-sample", type=int, default=500, help="Number of objects to query Fritz for"
+    )
     parser.add_argument("--max-alerts", type=int, default=50000)
     parser.add_argument("--output-dir", default="/work/hdd/bcrv/kmajithia/tempo/tarball_comparison")
     args = parser.parse_args()
@@ -292,7 +318,7 @@ def main():
         avro_dir = Path(args.avro_dir)
         avro_files = sorted(avro_dir.glob("*.avro"))
         print(f"Reading {len(avro_files)} avro files from directory...")
-        for af in avro_files[:args.max_alerts]:
+        for af in avro_files[: args.max_alerts]:
             try:
                 with open(af, "rb") as f:
                     for alert in fastavro.reader(f):
@@ -311,6 +337,7 @@ def main():
         # Stream avro directly from tarball in memory (no disk extraction)
         print(f"Streaming from tarball: {args.tarball}")
         import io
+
         with tarfile.open(args.tarball, "r:gz") as tar:
             for member in tar:
                 if not member.name.endswith(".avro") or not member.isfile():
@@ -333,8 +360,10 @@ def main():
                     continue
 
                 if n_read % 5000 == 0 and n_read > 0:
-                    print(f"  Streamed {n_read} alerts, {len(object_detections)} unique objects",
-                          flush=True)
+                    print(
+                        f"  Streamed {n_read} alerts, {len(object_detections)} unique objects",
+                        flush=True,
+                    )
     else:
         print("ERROR: Provide --tarball or --avro-dir")
         return
@@ -377,15 +406,17 @@ def main():
         pred_class = int(np.argmax(probs))
         uncertainty = NUM_CLASSES / S
 
-        predictions.append({
-            "objectId": oid,
-            "n_detections": len(dets),
-            "tempo_class": CLASS_NAMES[pred_class],
-            "tempo_class_idx": pred_class,
-            "tempo_max_prob": float(probs.max()),
-            "tempo_uncertainty": float(uncertainty),
-            **{f"prob_{CLASS_NAMES[j]}": float(probs[j]) for j in range(NUM_CLASSES)},
-        })
+        predictions.append(
+            {
+                "objectId": oid,
+                "n_detections": len(dets),
+                "tempo_class": CLASS_NAMES[pred_class],
+                "tempo_class_idx": pred_class,
+                "tempo_max_prob": float(probs.max()),
+                "tempo_uncertainty": float(uncertainty),
+                **{f"prob_{CLASS_NAMES[j]}": float(probs[j]) for j in range(NUM_CLASSES)},
+            }
+        )
 
         if (i + 1) % 5000 == 0:
             print(f"  Processed {i + 1}/{len(object_detections)}")
@@ -411,9 +442,9 @@ def main():
         print("Skipping Fritz comparison.")
     else:
         print(f"\nQuerying Fritz for {args.fritz_sample} objects...")
-        sample_oids = df["objectId"].sample(
-            min(args.fritz_sample, len(df)), random_state=42
-        ).tolist()
+        sample_oids = (
+            df["objectId"].sample(min(args.fritz_sample, len(df)), random_state=42).tolist()
+        )
 
         fritz_results = query_fritz_classifications(sample_oids, args.fritz_token)
         print(f"Fritz returned classifications for {len(fritz_results)} objects")
@@ -442,12 +473,12 @@ def main():
                 n_match = mapped["match"].sum()
                 agreement = n_match / len(mapped)
 
-                print(f"\n{'='*60}")
+                print(f"\n{'=' * 60}")
                 print("TEMPO vs Fritz Comparison")
-                print(f"{'='*60}")
+                print(f"{'=' * 60}")
                 print(f"Objects with Fritz classification: {len(fritz_results)}")
                 print(f"Mappable to TEMPO classes: {len(mapped)}")
-                print(f"Agreement: {n_match}/{len(mapped)} ({100*agreement:.1f}%)")
+                print(f"Agreement: {n_match}/{len(mapped)} ({100 * agreement:.1f}%)")
 
                 # Per-class breakdown
                 print("\nPer-class agreement:")
@@ -456,20 +487,25 @@ def main():
                     if cls_mask.sum() > 0:
                         cls_match = mapped.loc[cls_mask, "match"].sum()
                         cls_total = cls_mask.sum()
-                        print(f"  {cls}: {cls_match}/{cls_total} ({100*cls_match/cls_total:.1f}%)")
+                        print(
+                            f"  {cls}: {cls_match}/{cls_total} ({100 * cls_match / cls_total:.1f}%)"
+                        )
 
                 # Disagreements
                 disagree = mapped[mapped["match"] == False]
                 if len(disagree) > 0:
                     print(f"\nDisagreements ({len(disagree)}):")
                     for _, row in disagree.head(20).iterrows():
-                        print(f"  {row['objectId']}: "
-                              f"TEMPO={row['tempo_class']} ({row['tempo_max_prob']:.2f}) "
-                              f"vs Fritz={row['fritz_class_raw']} "
-                              f"| uncertainty={row['tempo_uncertainty']:.3f}")
+                        print(
+                            f"  {row['objectId']}: "
+                            f"TEMPO={row['tempo_class']} ({row['tempo_max_prob']:.2f}) "
+                            f"vs Fritz={row['fritz_class_raw']} "
+                            f"| uncertainty={row['tempo_uncertainty']:.3f}"
+                        )
 
                 # Confusion matrix
                 from sklearn.metrics import confusion_matrix
+
                 y_true_labels = mapped["fritz_class_broad"].values
                 y_pred_labels = mapped["tempo_class"].values
 
@@ -489,8 +525,16 @@ def main():
                 for i in range(len(present_classes)):
                     for j in range(len(present_classes)):
                         color = "white" if cm[i, j] > cm.max() / 2 else "black"
-                        ax.text(j, i, str(cm[i, j]), ha="center", va="center",
-                                fontsize=12, color=color, fontweight="bold")
+                        ax.text(
+                            j,
+                            i,
+                            str(cm[i, j]),
+                            ha="center",
+                            va="center",
+                            fontsize=12,
+                            color=color,
+                            fontweight="bold",
+                        )
                 fig.tight_layout()
                 fig.savefig(out_dir / "tempo_vs_fritz_confusion.png", dpi=150)
                 plt.close()
@@ -510,9 +554,9 @@ def main():
                 with open(out_dir / "comparison_summary.json", "w") as f:
                     json.dump(summary, f, indent=2)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"All outputs saved to: {out_dir}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":

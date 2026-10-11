@@ -309,11 +309,7 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
 
     run_dirs = args.models or sorted(
-        [
-            d
-            for d in os.listdir(args.runs_dir)
-            if os.path.isdir(os.path.join(args.runs_dir, d))
-        ]
+        [d for d in os.listdir(args.runs_dir) if os.path.isdir(os.path.join(args.runs_dir, d))]
     )
 
     # Individual run visualizations

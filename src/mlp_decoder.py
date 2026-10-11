@@ -286,9 +286,7 @@ def evaluate_run(run_path, output_dir, device="cpu"):
                 target_names=class_names,
                 output_dict=True,
             )
-            with open(
-                os.path.join(run_out, f"report_{task}_{best_name}.json"), "w"
-            ) as f:
+            with open(os.path.join(run_out, f"report_{task}_{best_name}.json"), "w") as f:
                 json.dump(report, f, indent=2)
 
     with open(os.path.join(run_out, "decoder_results.json"), "w") as f:
@@ -302,19 +300,13 @@ def main():
     parser.add_argument("--runs-dir", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--models", nargs="*", default=None)
-    parser.add_argument(
-        "--device", default="cuda" if torch.cuda.is_available() else "cpu"
-    )
+    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
 
     run_dirs = args.models or sorted(
-        [
-            d
-            for d in os.listdir(args.runs_dir)
-            if os.path.isdir(os.path.join(args.runs_dir, d))
-        ]
+        [d for d in os.listdir(args.runs_dir) if os.path.isdir(os.path.join(args.runs_dir, d))]
     )
 
     all_results = []

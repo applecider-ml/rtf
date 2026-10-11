@@ -137,7 +137,7 @@ def extract_embeddings(model, fritz_dir, scores_path, device):
     all_emb, all_ids = [], []
     npz_files = sorted(Path(fritz_dir).glob("*.npz"))
     npz_files = [f for f in npz_files if f.stem != "fritz_manifest"]
-    
+
     MAX_LEN = 257
 
     for npz_path in npz_files:
@@ -146,10 +146,10 @@ def extract_embeddings(model, fritz_dir, scores_path, device):
             data = np.load(npz_path, allow_pickle=True)
             x_np = data["x"]
             image_np = data["images"]
-            
+
             if x_np.shape[0] < 3:
                 continue
-                
+
             if x_np.shape[0] > MAX_LEN:
                 x_np = x_np[:MAX_LEN]
 
@@ -171,18 +171,18 @@ def extract_embeddings(model, fritz_dir, scores_path, device):
         on="obj_id",
         how="left",
     )
-    
+
     # Filter only known classifications
     has_class = df["classification"].fillna("").replace("", np.nan).notna()
     df_known = df[has_class].copy()
-    
-    # CRITICAL FIX: The raw classification column has dozens of rare classes with 
-    # only 1 or 2 examples. This mathematically breaks Silhouette score and 
+
+    # CRITICAL FIX: The raw classification column has dozens of rare classes with
+    # only 1 or 2 examples. This mathematically breaks Silhouette score and
     # cross-validation. We will filter to only the top 5 most common classes.
     top_5_classes = df_known["classification"].value_counts().nlargest(5).index
     is_top_5 = df_known["classification"].isin(top_5_classes)
     df_filtered = df_known[is_top_5]
-    
+
     # Get the indices of the filtered sources relative to the original all_ids list
     idx = df_filtered.index.values
     embeddings_arr = np.array(all_emb)[idx]
@@ -225,19 +225,22 @@ def compute_metrics(embeddings, labels, encoder_name):
         # Subsample for speed if necessary
         n_sil = min(len(X), 10000)
         idx = np.random.choice(len(X), n_sil, replace=False)
-        results["silhouette"] = float(
-            silhouette_score(X[idx], y[idx], metric="cosine")
-        )
+        results["silhouette"] = float(silhouette_score(X[idx], y[idx], metric="cosine"))
     else:
         results["silhouette"] = float("nan")
 
     # k-NN accuracy (k=10, 5-fold CV, cosine distance)
     if n_classes >= 2 and len(X) >= 20:
         knn = KNeighborsClassifier(
-            n_neighbors=min(10, len(X) // 5), metric="cosine",
+            n_neighbors=min(10, len(X) // 5),
+            metric="cosine",
         )
         knn_scores = cross_val_score(
-            knn, X, y, cv=min(5, n_classes), scoring="accuracy",
+            knn,
+            X,
+            y,
+            cv=min(5, n_classes),
+            scoring="accuracy",
         )
         results["knn_acc"] = float(knn_scores.mean())
         results["knn_std"] = float(knn_scores.std())
@@ -250,10 +253,17 @@ def compute_metrics(embeddings, labels, encoder_name):
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
         clf = LogisticRegression(
-            max_iter=2000, multi_class="multinomial", C=1.0, n_jobs=-1,
+            max_iter=2000,
+            multi_class="multinomial",
+            C=1.0,
+            n_jobs=-1,
         )
         lp_scores = cross_val_score(
-            clf, X_scaled, y, cv=min(5, n_classes), scoring="accuracy",
+            clf,
+            X_scaled,
+            y,
+            cv=min(5, n_classes),
+            scoring="accuracy",
         )
         results["linear_probe_acc"] = float(lp_scores.mean())
         results["linear_probe_std"] = float(lp_scores.std())
@@ -286,10 +296,12 @@ def plot_comparison_umap(encoder_data, output_dir):
     """
     try:
         from umap import UMAP
+
         method = "UMAP"
         reducer_cls = UMAP
     except ImportError:
         from sklearn.manifold import TSNE
+
         method = "t-SNE"
         reducer_cls = None
 
@@ -303,7 +315,9 @@ def plot_comparison_umap(encoder_data, output_dir):
     unique_labels = sorted(colormap.keys())
 
     fig, axes = plt.subplots(
-        1, n_encoders, figsize=(7 * n_encoders, 6),
+        1,
+        n_encoders,
+        figsize=(7 * n_encoders, 6),
         constrained_layout=True,
     )
     if n_encoders == 1:
@@ -311,7 +325,9 @@ def plot_comparison_umap(encoder_data, output_dir):
 
     fig.suptitle(
         f"128D Embedding Space Comparison ({method})",
-        fontsize=16, fontweight="bold", y=1.02,
+        fontsize=16,
+        fontweight="bold",
+        y=1.02,
     )
 
     for ax, (name, emb, labels) in zip(axes, encoder_data):
@@ -326,7 +342,10 @@ def plot_comparison_umap(encoder_data, output_dir):
 
         if reducer_cls is not None:
             reducer = UMAP(
-                n_components=2, n_neighbors=30, min_dist=0.3, random_state=42,
+                n_components=2,
+                n_neighbors=30,
+                min_dist=0.3,
+                random_state=42,
             )
         else:
             reducer = TSNE(n_components=2, perplexity=30, random_state=42)
@@ -341,8 +360,11 @@ def plot_comparison_umap(encoder_data, output_dir):
             if mask.sum() == 0:
                 continue
             ax.scatter(
-                coords[mask, 0], coords[mask, 1],
-                c=[colormap[cls]], s=6, alpha=0.6,
+                coords[mask, 0],
+                coords[mask, 1],
+                c=[colormap[cls]],
+                s=6,
+                alpha=0.6,
             )
 
         ax.set_title(name, fontsize=14, fontweight="bold")
@@ -352,8 +374,15 @@ def plot_comparison_umap(encoder_data, output_dir):
 
     # Shared legend
     legend_elements = [
-        Line2D([0], [0], marker="o", color="w", markerfacecolor=colormap[cls],
-               markersize=8, label=f"{cls}")
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="w",
+            markerfacecolor=colormap[cls],
+            markersize=8,
+            label=f"{cls}",
+        )
         for cls in unique_labels
     ]
     fig.legend(
@@ -411,8 +440,6 @@ def main():
     for name, _, path in models:
         print(f"    - {name}: {path}")
 
-
-
     # --- Extract embeddings for each model ---
     encoder_results = []  # list of (name, emb_data, metrics)
     encoder_umap_data = []  # for UMAP plot
@@ -437,7 +464,10 @@ def main():
         print(f"  Extracted: {emb.shape} in {dt:.1f}s")
 
         # Save individual embeddings
-        emb_path = os.path.join(args.output_dir, f"embeddings_{name.lower().replace(' ', '_').replace('(', '').replace(')', '')}.npz")
+        emb_path = os.path.join(
+            args.output_dir,
+            f"embeddings_{name.lower().replace(' ', '_').replace('(', '').replace(')', '')}.npz",
+        )
         np.savez_compressed(emb_path, **emb_data)
         print(f"  Saved: {emb_path}")
 
@@ -453,7 +483,9 @@ def main():
 
         print(f"    Silhouette:    {metrics['silhouette']:.4f}")
         print(f"    k-NN (k=10):   {metrics['knn_acc']:.4f} ± {metrics['knn_std']:.4f}")
-        print(f"    Linear Probe:  {metrics['linear_probe_acc']:.4f} ± {metrics['linear_probe_std']:.4f}")
+        print(
+            f"    Linear Probe:  {metrics['linear_probe_acc']:.4f} ± {metrics['linear_probe_std']:.4f}"
+        )
 
         # Collect for UMAP
         encoder_umap_data.append((name, emb_data["embeddings"], emb_data["labels_fine"]))
@@ -471,10 +503,7 @@ def main():
     print(f"\n{'=' * 90}")
     print("ENCODER COMPARISON RESULTS")
     print(f"{'=' * 90}")
-    print(
-        f"{'Encoder':<20} {'Params':>10} {'Silhouette':>12} "
-        f"{'k-NN Acc':>10} {'LinProbe':>10}"
-    )
+    print(f"{'Encoder':<20} {'Params':>10} {'Silhouette':>12} {'k-NN Acc':>10} {'LinProbe':>10}")
     print("-" * 70)
     for r in encoder_results:
         print(

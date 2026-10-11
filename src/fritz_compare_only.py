@@ -10,6 +10,7 @@ Usage:
         --fritz-token YOUR_TOKEN \
         --output-dir /work/hdd/bcrv/kmajithia/tempo/tarball_comparison
 """
+
 import argparse
 import json
 import os
@@ -27,20 +28,43 @@ CLASS_NAMES = ["SNI", "SNII", "TDE", "AGN", "CV"]
 
 # Fritz class name -> TEMPO broad class
 FRITZ_TO_TEMPO = {
-    "SN Ia": "SNI", "SN Ia-91T-like": "SNI", "SN Ia-91bg-like": "SNI",
-    "SN Ia-CSM": "SNI", "SN Ia-pec": "SNI", "SN Ia-02cx-like": "SNI",
-    "SN Iax[02cx-like]": "SNI", "SN Ia-SC": "SNI",
-    "SN Ib": "SNI", "SN Ib-pec": "SNI", "SN Ib/c": "SNI",
-    "SN Ic": "SNI", "SN Ic-BL": "SNI", "SN Ic-pec": "SNI",
-    "SN I": "SNI", "SLSN-I": "SNI",
-    "SN II": "SNII", "SN IIP": "SNII", "SN IIL": "SNII",
-    "SN IIn": "SNII", "SN IIb": "SNII", "SN II-pec": "SNII",
-    "SN IIn-pec": "SNII", "SLSN-II": "SNII",
-    "TDE": "TDE", "Tidal Disruption Event": "TDE",
-    "AGN": "AGN", "QSO": "AGN", "Blazar": "AGN", "Seyfert": "AGN",
+    "SN Ia": "SNI",
+    "SN Ia-91T-like": "SNI",
+    "SN Ia-91bg-like": "SNI",
+    "SN Ia-CSM": "SNI",
+    "SN Ia-pec": "SNI",
+    "SN Ia-02cx-like": "SNI",
+    "SN Iax[02cx-like]": "SNI",
+    "SN Ia-SC": "SNI",
+    "SN Ib": "SNI",
+    "SN Ib-pec": "SNI",
+    "SN Ib/c": "SNI",
+    "SN Ic": "SNI",
+    "SN Ic-BL": "SNI",
+    "SN Ic-pec": "SNI",
+    "SN I": "SNI",
+    "SLSN-I": "SNI",
+    "SN II": "SNII",
+    "SN IIP": "SNII",
+    "SN IIL": "SNII",
+    "SN IIn": "SNII",
+    "SN IIb": "SNII",
+    "SN II-pec": "SNII",
+    "SN IIn-pec": "SNII",
+    "SLSN-II": "SNII",
+    "TDE": "TDE",
+    "Tidal Disruption Event": "TDE",
+    "AGN": "AGN",
+    "QSO": "AGN",
+    "Blazar": "AGN",
+    "Seyfert": "AGN",
     "LINER": "AGN",
-    "CV": "CV", "Cataclysmic Variable": "CV", "Nova": "CV",
-    "Cataclysmic": "CV", "CV*": "CV", "dwarf nova": "CV",
+    "CV": "CV",
+    "Cataclysmic Variable": "CV",
+    "Nova": "CV",
+    "Cataclysmic": "CV",
+    "CV*": "CV",
+    "dwarf nova": "CV",
 }
 
 
@@ -56,7 +80,8 @@ def query_fritz_classifications(object_ids, token):
         try:
             r = requests.get(
                 f"{base}/api/sources/{oid}/classifications",
-                headers=headers, timeout=30,
+                headers=headers,
+                timeout=30,
             )
             if r.status_code == 200:
                 data = r.json().get("data", [])
@@ -73,9 +98,10 @@ def query_fritz_classifications(object_ids, token):
                 n_err += 1
 
             if (i + 1) % 200 == 0:
-                print(f"  [{i+1}/{len(object_ids)}] "
-                      f"found={len(results)}, 404={n_404}, err={n_err}",
-                      flush=True)
+                print(
+                    f"  [{i + 1}/{len(object_ids)}] found={len(results)}, 404={n_404}, err={n_err}",
+                    flush=True,
+                )
 
             time.sleep(0.2)  # rate limit
 
@@ -83,18 +109,21 @@ def query_fritz_classifications(object_ids, token):
             n_err += 1
             time.sleep(1)
 
-    print(f"  DONE: {len(object_ids)} queried, "
-          f"{len(results)} classified, {n_404} not found, {n_err} errors")
+    print(
+        f"  DONE: {len(object_ids)} queried, "
+        f"{len(results)} classified, {n_404} not found, {n_err} errors"
+    )
     return results
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--predictions",
-                        default="/work/hdd/bcrv/kmajithia/tempo/tarball_comparison/tempo_tarball_predictions.csv")
+    parser.add_argument(
+        "--predictions",
+        default="/work/hdd/bcrv/kmajithia/tempo/tarball_comparison/tempo_tarball_predictions.csv",
+    )
     parser.add_argument("--fritz-token", default=os.environ.get("FRITZ_TOKEN", ""))
-    parser.add_argument("--output-dir",
-                        default="/work/hdd/bcrv/kmajithia/tempo/tarball_comparison")
+    parser.add_argument("--output-dir", default="/work/hdd/bcrv/kmajithia/tempo/tarball_comparison")
     args = parser.parse_args()
 
     out_dir = Path(args.output_dir)
@@ -144,9 +173,9 @@ def main():
     mapped = comp_df[comp_df["fritz_class_broad"].notna()].copy()
     unmapped = comp_df[comp_df["fritz_class_broad"].isna()]
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("TEMPO vs Fritz — Full Comparison")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"Fritz classified:      {len(fritz_results)}")
     print(f"Mappable to TEMPO:     {len(mapped)}")
     if len(unmapped) > 0:
@@ -159,7 +188,7 @@ def main():
 
     n_match = mapped["match"].sum()
     agreement = n_match / len(mapped)
-    print(f"Agreement:             {n_match}/{len(mapped)} ({100*agreement:.1f}%)")
+    print(f"Agreement:             {n_match}/{len(mapped)} ({100 * agreement:.1f}%)")
 
     # Per-class
     print("\nPer Fritz class:")
@@ -168,7 +197,7 @@ def main():
         if cls_mask.sum() > 0:
             cls_match = mapped.loc[cls_mask, "match"].sum()
             cls_total = cls_mask.sum()
-            print(f"  {cls}: {cls_match}/{cls_total} ({100*cls_match/cls_total:.1f}%)")
+            print(f"  {cls}: {cls_match}/{cls_total} ({100 * cls_match / cls_total:.1f}%)")
 
     # Uncertainty analysis: does thresholding help?
     print("\nUncertainty thresholding analysis:")
@@ -177,23 +206,28 @@ def main():
         if len(confident) > 0:
             acc = confident["match"].sum() / len(confident)
             coverage = len(confident) / len(mapped)
-            print(f"  threshold={thresh:.2f}: "
-                  f"accuracy={100*acc:.1f}%, "
-                  f"coverage={100*coverage:.1f}% "
-                  f"({len(confident)}/{len(mapped)} objects)")
+            print(
+                f"  threshold={thresh:.2f}: "
+                f"accuracy={100 * acc:.1f}%, "
+                f"coverage={100 * coverage:.1f}% "
+                f"({len(confident)}/{len(mapped)} objects)"
+            )
 
     # Disagreements
     disagree = mapped[mapped["match"] == False]
     if len(disagree) > 0:
         print(f"\nDisagreements ({len(disagree)}):")
         for _, row in disagree.head(30).iterrows():
-            print(f"  {row['objectId']}: "
-                  f"TEMPO={row['tempo_class']} ({row['tempo_max_prob']:.2f}) "
-                  f"vs Fritz={row['fritz_class_raw']} "
-                  f"| unc={row['tempo_uncertainty']:.3f}")
+            print(
+                f"  {row['objectId']}: "
+                f"TEMPO={row['tempo_class']} ({row['tempo_max_prob']:.2f}) "
+                f"vs Fritz={row['fritz_class_raw']} "
+                f"| unc={row['tempo_uncertainty']:.3f}"
+            )
 
     # Confusion matrix
     from sklearn.metrics import classification_report, confusion_matrix
+
     y_true = mapped["fritz_class_broad"].values
     y_pred = mapped["tempo_class"].values
 
@@ -215,8 +249,16 @@ def main():
     for i in range(len(present)):
         for j in range(len(present)):
             color = "white" if cm[i, j] > cm.max() / 2 else "black"
-            ax.text(j, i, str(cm[i, j]), ha="center", va="center",
-                    fontsize=12, color=color, fontweight="bold")
+            ax.text(
+                j,
+                i,
+                str(cm[i, j]),
+                ha="center",
+                va="center",
+                fontsize=12,
+                color=color,
+                fontweight="bold",
+            )
     fig.tight_layout()
     fig.savefig(out_dir / "tempo_vs_fritz_confusion_full.png", dpi=150)
     plt.close()
@@ -233,13 +275,16 @@ def main():
         "agreement": round(float(agreement), 4),
         "thresholding": {
             f"thresh_{t}": {
-                "accuracy": round(float(
-                    mapped[mapped["tempo_uncertainty"] <= t]["match"].sum()
-                    / max(len(mapped[mapped["tempo_uncertainty"] <= t]), 1)
-                ), 4),
-                "coverage": round(float(
-                    len(mapped[mapped["tempo_uncertainty"] <= t]) / len(mapped)
-                ), 4),
+                "accuracy": round(
+                    float(
+                        mapped[mapped["tempo_uncertainty"] <= t]["match"].sum()
+                        / max(len(mapped[mapped["tempo_uncertainty"] <= t]), 1)
+                    ),
+                    4,
+                ),
+                "coverage": round(
+                    float(len(mapped[mapped["tempo_uncertainty"] <= t]) / len(mapped)), 4
+                ),
             }
             for t in [0.20, 0.25, 0.30]
         },
@@ -248,9 +293,9 @@ def main():
         json.dump(summary, f, indent=2)
     print(f"Saved: {out_dir / 'comparison_summary_full.json'}")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"All outputs saved to: {out_dir}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":

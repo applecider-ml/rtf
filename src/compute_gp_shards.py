@@ -66,8 +66,8 @@ def reconstruct_photometry(x_seq):
     logflux = x_seq[:, 2].numpy().astype(np.float64)
     logflux_err = x_seq[:, 3].numpy().astype(np.float64)
 
-    mags = (logflux / -0.4).tolist()       # mag = logflux / -0.4
-    errs = (logflux_err / 0.4).tolist()    # sigmapsf = logflux_err / 0.4
+    mags = (logflux / -0.4).tolist()  # mag = logflux / -0.4
+    errs = (logflux_err / 0.4).tolist()  # sigmapsf = logflux_err / 0.4
 
     # Reconstruct bands from one-hot encoding
     band_onehot = x_seq[:, 4:7].numpy()
@@ -77,8 +77,7 @@ def reconstruct_photometry(x_seq):
     # Filter out any non-finite or unreasonable values
     valid = []
     for i in range(L):
-        if (np.isfinite(mags[i]) and np.isfinite(errs[i])
-                and errs[i] > 0 and 10.0 < mags[i] < 25.0):
+        if np.isfinite(mags[i]) and np.isfinite(errs[i]) and errs[i] > 0 and 10.0 < mags[i] < 25.0:
             valid.append(i)
 
     if len(valid) < 3:
@@ -138,13 +137,19 @@ def compute_features_for_shard(shard_path, output_dir):
             n_extract_fail += 1
             if errors_printed < 3:
                 print(f"    [ERROR] Source {i}: {type(e).__name__}: {e}", flush=True)
-                print(f"      L={len(times)}, mags[0:3]={mags[:3]}, "
-                      f"errs[0:3]={errs[:3]}, bands[0:3]={bands[:3]}", flush=True)
+                print(
+                    f"      L={len(times)}, mags[0:3]={mags[:3]}, "
+                    f"errs[0:3]={errs[:3]}, bands[0:3]={bands[:3]}",
+                    flush=True,
+                )
                 errors_printed += 1
 
     # Print diagnostics for first shard
-    print(f"    {shard_name}: phot_fail={n_phot_fail}, extract_fail={n_extract_fail}, "
-          f"success={n - n_phot_fail - n_extract_fail}", flush=True)
+    print(
+        f"    {shard_name}: phot_fail={n_phot_fail}, extract_fail={n_extract_fail}, "
+        f"success={n - n_phot_fail - n_extract_fail}",
+        flush=True,
+    )
 
     # Build canonical key order (sorted for reproducibility)
     canonical_keys = sorted(all_keys)
@@ -194,9 +199,7 @@ def compute_features_for_shard(shard_path, output_dir):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Add GP features to existing training shards"
-    )
+    parser = argparse.ArgumentParser(description="Add GP features to existing training shards")
     parser.add_argument(
         "--input-dir",
         required=True,
@@ -235,9 +238,7 @@ def main():
         total_fitted = 0
         all_canonical_keys = None
         for sf in shard_files:
-            n, n_success, n_gp, keys = compute_features_for_shard(
-                str(sf), args.output_dir
-            )
+            n, n_success, n_gp, keys = compute_features_for_shard(str(sf), args.output_dir)
             total_sources += n
             total_fitted += n_success
             if all_canonical_keys is None:
@@ -266,9 +267,11 @@ def main():
     print(f"{'=' * 60}")
     print(f"  Shards processed: {len(shard_files)}")
     print(f"  Total sources:    {total_sources:,}")
-    print(f"  Successfully fit: {total_fitted:,} ({100*total_fitted/max(1,total_sources):.1f}%)")
+    print(
+        f"  Successfully fit: {total_fitted:,} ({100 * total_fitted / max(1, total_sources):.1f}%)"
+    )
     print(f"  GP feature dim:   {len(all_canonical_keys) if all_canonical_keys else 0}")
-    print(f"  Total time:       {elapsed:.1f}s ({elapsed/60:.1f} min)")
+    print(f"  Total time:       {elapsed:.1f}s ({elapsed / 60:.1f} min)")
     print(f"  Output:           {args.output_dir}")
     print(f"{'=' * 60}", flush=True)
 

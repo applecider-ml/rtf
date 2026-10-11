@@ -67,8 +67,12 @@ class LightCurveEncoder(nn.Module):
         nn.init.normal_(self.cls_token, std=0.02)
 
         enc_layer = nn.TransformerEncoderLayer(
-            d_model, n_heads, d_ff, dropout,
-            batch_first=True, norm_first=True,
+            d_model,
+            n_heads,
+            d_ff,
+            dropout,
+            batch_first=True,
+            norm_first=True,
         )
         self.encoder = nn.TransformerEncoder(enc_layer, n_layers)
         self.norm = nn.LayerNorm(d_model)
@@ -296,9 +300,7 @@ class TransientBind(nn.Module):
         self.temperature = temperature
 
         # Learnable log-temperature (initialized from hyperparameter)
-        self.log_temperature = nn.Parameter(
-            torch.tensor(temperature).log()
-        )
+        self.log_temperature = nn.Parameter(torch.tensor(temperature).log())
 
         # --- Branch encoders (produce raw embeddings) ---
 
@@ -345,8 +347,8 @@ class TransientBind(nn.Module):
         x_meta = x[:, :, 7:]
 
         lc_emb = self.lc_encoder(x_phot, pad_mask)  # (B, embed_dim)
-        img_emb = self.img_encoder(images)           # (B, embed_dim)
-        meta_emb = self.meta_encoder(x_meta)         # (B, embed_dim)
+        img_emb = self.img_encoder(images)  # (B, embed_dim)
+        meta_emb = self.meta_encoder(x_meta)  # (B, embed_dim)
 
         return lc_emb, img_emb, meta_emb
 

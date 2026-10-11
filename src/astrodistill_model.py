@@ -27,6 +27,7 @@ Architecture:
 
     Loss: L2(student_prediction, instance_norm(teacher_target)) at masked positions
 """
+
 from __future__ import annotations
 
 import copy
@@ -57,17 +58,19 @@ class TransformerLayerStack(nn.Module):
         dropout: float = 0.1,
     ):
         super().__init__()
-        self.layers = nn.ModuleList([
-            nn.TransformerEncoderLayer(
-                d_model=d_model,
-                nhead=n_heads,
-                dim_feedforward=d_ff,
-                dropout=dropout,
-                batch_first=True,
-                norm_first=True,
-            )
-            for _ in range(n_layers)
-        ])
+        self.layers = nn.ModuleList(
+            [
+                nn.TransformerEncoderLayer(
+                    d_model=d_model,
+                    nhead=n_heads,
+                    dim_feedforward=d_ff,
+                    dropout=dropout,
+                    batch_first=True,
+                    norm_first=True,
+                )
+                for _ in range(n_layers)
+            ]
+        )
         self.norm = nn.LayerNorm(d_model)
 
     def forward(
@@ -261,24 +264,24 @@ class AstroDistill(nn.Module):
         B, _L, _ = x.shape
 
         # Split channels
-        x_phot = x[:, :, :7]     # (B, L, 7)
-        x_meta = x[:, :, 7:]     # (B, L, 30)
+        x_phot = x[:, :, :7]  # (B, L, 7)
+        x_meta = x[:, :, 7:]  # (B, L, 30)
 
         # Photometry tokens
-        phot_tokens = self.phot_proj(x_phot)                    # (B, L, d_model)
+        phot_tokens = self.phot_proj(x_phot)  # (B, L, d_model)
         phot_tokens = phot_tokens + self.meta_obs_proj(x_meta)  # add per-obs metadata
-        phot_tokens = phot_tokens + self.time2vec(x[:, :, 0])   # add time encoding
-        phot_tokens = phot_tokens + self.modality_emb_phot      # add modality ID
+        phot_tokens = phot_tokens + self.time2vec(x[:, :, 0])  # add time encoding
+        phot_tokens = phot_tokens + self.modality_emb_phot  # add modality ID
 
         # Image token
-        img_emb = self.image_tower(images)                # (B, d_model)
-        img_token = img_emb.unsqueeze(1)                  # (B, 1, d_model)
+        img_emb = self.image_tower(images)  # (B, d_model)
+        img_token = img_emb.unsqueeze(1)  # (B, 1, d_model)
         img_token = img_token + self.modality_emb_img
 
         # Metadata summary token
-        static_meta = x_meta.mean(dim=1)                  # (B, 30)
-        meta_emb = self.meta_summary_mlp(static_meta)     # (B, d_model)
-        meta_token = meta_emb.unsqueeze(1)                # (B, 1, d_model)
+        static_meta = x_meta.mean(dim=1)  # (B, 30)
+        meta_emb = self.meta_summary_mlp(static_meta)  # (B, d_model)
+        meta_token = meta_emb.unsqueeze(1)  # (B, 1, d_model)
         meta_token = meta_token + self.modality_emb_meta
 
         # Concatenate: [phot_0, ..., phot_L-1, img, meta]
@@ -390,7 +393,8 @@ class AstroDistill(nn.Module):
         # ── Step 2: Teacher forward (full input, no masking, no gradient) ──
         with torch.no_grad():
             teacher_all_layers = self.teacher_encoder.forward_all_layers(
-                tokens, src_key_padding_mask=token_pad_mask,
+                tokens,
+                src_key_padding_mask=token_pad_mask,
             )
             # Average top-K layers for smooth targets
             k = self.top_k_layers
@@ -402,12 +406,15 @@ class AstroDistill(nn.Module):
 
         # ── Step 3: Apply masking to create student input ──
         masked_tokens, mask_indices, mask_valid = self._apply_masking(
-            tokens, pad_mask, L,
+            tokens,
+            pad_mask,
+            L,
         )
 
         # ── Step 4: Student forward (masked input, gradient flows) ──
         student_out = self.student_encoder(
-            masked_tokens, src_key_padding_mask=token_pad_mask,
+            masked_tokens,
+            src_key_padding_mask=token_pad_mask,
         )
         # student_out: (B, L+2, d_model)
 
@@ -511,7 +518,8 @@ class AstroDistill(nn.Module):
 
         # Teacher: full input
         teacher_all_layers = self.teacher_encoder.forward_all_layers(
-            tokens, src_key_padding_mask=token_pad_mask,
+            tokens,
+            src_key_padding_mask=token_pad_mask,
         )
         k = self.top_k_layers
         teacher_targets = torch.stack(teacher_all_layers[-k:]).mean(dim=0)
@@ -525,14 +533,17 @@ class AstroDistill(nn.Module):
             all_masked[b, :n_valid] = self.mask_token
 
         student_out = self.student_encoder(
-            all_masked, src_key_padding_mask=token_pad_mask,
+            all_masked,
+            src_key_padding_mask=token_pad_mask,
         )
 
         # Measure L2 distance at all valid photometry positions
         # (not image/meta tokens — those weren't masked)
         per_position_err = ((student_out[:, :L] - teacher_targets[:, :L]) ** 2).mean(dim=-1)
         # per_position_err: (B, L)
-        per_sample_err = (per_position_err * valid.float()).sum(dim=1) / valid.sum(dim=1).clamp(min=1)
+        per_sample_err = (per_position_err * valid.float()).sum(dim=1) / valid.sum(dim=1).clamp(
+            min=1
+        )
 
         return per_sample_err  # (B,)
 

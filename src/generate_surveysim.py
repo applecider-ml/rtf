@@ -130,9 +130,7 @@ def photometry_to_npz(times, mags, mag_errs, bands, label):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate synthetic light curves with survey-sim"
-    )
+    parser = argparse.ArgumentParser(description="Generate synthetic light curves with survey-sim")
     parser.add_argument(
         "--ztf-dir",
         required=True,
@@ -152,9 +150,7 @@ def main():
         help="Target detections per population",
     )
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument(
-        "--ztf-start", default="201803", help="ZTF survey start (YYYYMM)"
-    )
+    parser.add_argument("--ztf-start", default="201803", help="ZTF survey start (YYYYMM)")
     parser.add_argument("--ztf-end", default="202103", help="ZTF survey end (YYYYMM)")
     args = parser.parse_args()
 
@@ -163,9 +159,7 @@ def main():
     os.makedirs(os.path.join(args.output_dir, "train"), exist_ok=True)
 
     print(f"Loading ZTF survey from {args.ztf_dir}...")
-    survey = ss.load_ztf_survey_local(
-        args.ztf_dir, start=args.ztf_start, end=args.ztf_end
-    )
+    survey = ss.load_ztf_survey_local(args.ztf_dir, start=args.ztf_start, end=args.ztf_end)
     print("Survey loaded.")
 
     criteria = ss.DetectionCriteria(min_detections=3, min_bands=1, snr_threshold=3.0)
@@ -185,9 +179,7 @@ def main():
 
         # Run simulation — inject enough to get n_per_pop detections
         n_inject = max(config["n_inject"], args.n_per_pop * 100)
-        print(
-            f"\n{pop_name}: injecting {n_inject} with {config['model_name']} model..."
-        )
+        print(f"\n{pop_name}: injecting {n_inject} with {config['model_name']} model...")
 
         pipeline = ss.SimulationPipeline(
             survey=survey,
