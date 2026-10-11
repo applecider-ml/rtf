@@ -9,6 +9,7 @@ Usage (on Delta):
 The script adds the TEMPO codebase to sys.path so it can import
 photometry_edl. Set TEMPO_ROOT env var if needed.
 """
+
 import argparse
 import os
 import sys
@@ -29,7 +30,7 @@ TEMPO_ROOT = os.environ.get(
 if TEMPO_ROOT not in sys.path:
     sys.path.insert(0, TEMPO_ROOT)
 
-from photometry_edl.models.transformer import (
+from photometry_edl.models.transformer import (  # noqa: E402
     EventTransformerEncoder,
     EvidentialClassifier,
 )

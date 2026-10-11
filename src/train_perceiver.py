@@ -63,7 +63,7 @@ def train_one_epoch(model, loader, optimizer, epoch, total_epochs, device, grad_
             avg_acc = metrics_sum.get("band_acc", 0) / n_batches
             rate = n_batches / elapsed if elapsed > 0 else 0
             print(
-                f"    Epoch {epoch+1}/{total_epochs} | batch {n_batches} | "
+                f"    Epoch {epoch + 1}/{total_epochs} | batch {n_batches} | "
                 f"loss={avg_loss:.4f} | band_acc={avg_acc:.3f} | "
                 f"{rate:.1f} batch/s | {elapsed:.0f}s elapsed",
                 flush=True,
@@ -112,7 +112,9 @@ def main():
     parser.add_argument("--mask-ratio", type=float, default=0.50)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--num-workers", type=int, default=4)
-    parser.add_argument("--image-backbone", choices=["simple", "zoobot", "dinov2"], default="simple")
+    parser.add_argument(
+        "--image-backbone", choices=["simple", "zoobot", "dinov2"], default="simple"
+    )
     parser.add_argument("--resume-from", default=None, help="Path to checkpoint.pt")
     args = parser.parse_args()
 
@@ -174,7 +176,9 @@ def main():
     print("Perceiver IO Masked Autoencoder Training")
     print(f"  Parameters: {n_params:,}")
     print(f"  Batch size: {args.batch_size}")
-    print(f"  Latents: {args.n_latents} | Cross layers: {args.n_cross} | Self layers: {args.n_self}")
+    print(
+        f"  Latents: {args.n_latents} | Cross layers: {args.n_cross} | Self layers: {args.n_self}"
+    )
     print(f"  Mask ratio: {args.mask_ratio}")
     print(f"  Embed dim: {args.embed_dim}")
     print(f"  Device: {args.device}")
@@ -185,7 +189,12 @@ def main():
     for epoch in range(start_epoch, args.epochs):
         t0 = time.time()
         train_m = train_one_epoch(
-            model, train_loader, optimizer, epoch, args.epochs, args.device,
+            model,
+            train_loader,
+            optimizer,
+            epoch,
+            args.epochs,
+            args.device,
         )
         scheduler.step()
         dt = time.time() - t0
@@ -216,7 +225,7 @@ def main():
         torch.save(ckpt, os.path.join(args.output_dir, "checkpoint.pt"))
 
         print(
-            f"  [{epoch+1:3d}/{args.epochs}] "
+            f"  [{epoch + 1:3d}/{args.epochs}] "
             f"loss={train_m['total_loss']:.4f} "
             f"recon_cont={train_m['recon_cont']:.4f} "
             f"recon_band={train_m['recon_band']:.4f} "
@@ -228,7 +237,8 @@ def main():
     print("\nLoading best model for embedding extraction...")
     best_state = torch.load(
         os.path.join(args.output_dir, "best_model.pt"),
-        weights_only=True, map_location=args.device,
+        weights_only=True,
+        map_location=args.device,
     )
     model.load_state_dict(best_state)
 

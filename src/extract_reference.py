@@ -31,7 +31,9 @@ def main():
     parser.add_argument("--output-dir", required=True, help="Where to save outputs")
     parser.add_argument("--batch-size", type=int, default=512, help="Batch size for inference")
     parser.add_argument("--num-workers", type=int, default=4, help="DataLoader workers")
-    parser.add_argument("--if-estimators", type=int, default=200, help="IsolationForest n_estimators")
+    parser.add_argument(
+        "--if-estimators", type=int, default=200, help="IsolationForest n_estimators"
+    )
     parser.add_argument("--if-contamination", type=float, default=0.05, help="IF contamination")
     args = parser.parse_args()
 
@@ -122,15 +124,17 @@ def main():
                 elapsed = time.time() - t0
                 rate = processed / elapsed
                 eta = (total_samples - processed) / rate if rate > 0 else 0
-                print(f"    [{processed:,}/{total_samples:,}] "
-                      f"{rate:.0f} samples/sec | ETA: {eta/60:.1f} min")
+                print(
+                    f"    [{processed:,}/{total_samples:,}] "
+                    f"{rate:.0f} samples/sec | ETA: {eta / 60:.1f} min"
+                )
 
     embeddings = np.concatenate(all_embeddings, axis=0)
     recon_errors = np.concatenate(all_recon_errors, axis=0)
     obj_ids = np.array(all_obj_ids)
 
     elapsed = time.time() - t0
-    print(f"  Done! {len(embeddings):,} embeddings in {elapsed/60:.1f} min")
+    print(f"  Done! {len(embeddings):,} embeddings in {elapsed / 60:.1f} min")
     print(f"  Embedding shape: {embeddings.shape}")
     print(f"  Recon error: mean={recon_errors.mean():.6f}, std={recon_errors.std():.6f}")
 

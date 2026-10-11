@@ -22,12 +22,36 @@ import requests
 
 # ── The 30 alert metadata keys the RTF model uses (from dataset.py) ──
 ALERT_META_KEYS = [
-    "diffmaglim", "ra", "dec", "magpsf", "sigmapsf", "chipsf",
-    "fwhm", "sky", "mindtoedge", "seeratio", "aimage", "bimage",
-    "elong", "nneg", "nbad", "scorr", "dsnrms", "ssnrms",
-    "magzpsci", "magzpsciunc", "magzpscirms", "nmatches",
-    "clrcoeff", "clrcounc", "zpclrcov", "zpmed", "clrmed",
-    "srmag1", "sgmag1", "simag1",
+    "diffmaglim",
+    "ra",
+    "dec",
+    "magpsf",
+    "sigmapsf",
+    "chipsf",
+    "fwhm",
+    "sky",
+    "mindtoedge",
+    "seeratio",
+    "aimage",
+    "bimage",
+    "elong",
+    "nneg",
+    "nbad",
+    "scorr",
+    "dsnrms",
+    "ssnrms",
+    "magzpsci",
+    "magzpsciunc",
+    "magzpscirms",
+    "nmatches",
+    "clrcoeff",
+    "clrcounc",
+    "zpclrcov",
+    "zpmed",
+    "clrmed",
+    "srmag1",
+    "sgmag1",
+    "simag1",
 ]
 
 # Fritz band name → ZTF fid
@@ -63,8 +87,8 @@ def fritz_get(endpoint, token, params=None):
                 print(f"    API error: {data.get('message', 'unknown')}")
                 return None
         except Exception as e:
-            print(f"    Request failed (attempt {attempt+1}): {e}")
-            time.sleep(2 ** attempt)
+            print(f"    Request failed (attempt {attempt + 1}): {e}")
+            time.sleep(2**attempt)
     return None
 
 
@@ -112,15 +136,17 @@ def fetch_group_sources(token, group_id):
             break
 
         for s in sources:
-            all_sources.append({
-                "id": s["id"],
-                "ra": s.get("ra"),
-                "dec": s.get("dec"),
-                "redshift": s.get("redshift"),
-                "classifications": [
-                    c.get("classification", "") for c in s.get("classifications", [])
-                ],
-            })
+            all_sources.append(
+                {
+                    "id": s["id"],
+                    "ra": s.get("ra"),
+                    "dec": s.get("dec"),
+                    "redshift": s.get("redshift"),
+                    "classifications": [
+                        c.get("classification", "") for c in s.get("classifications", [])
+                    ],
+                }
+            )
 
         total = data.get("totalMatches", "?")
         print(f"    Page {page}: {len(sources)} sources (total: {total})")
@@ -167,14 +193,16 @@ def photometry_to_tensor(phot_data):
         if magerr is None:
             magerr = 0.1  # default uncertainty
 
-        points.append({
-            "mjd": float(mjd),
-            "mag": float(mag),
-            "magerr": float(magerr),
-            "fid": BAND_TO_FID[filt],
-            "ra": p.get("ra", 0.0),
-            "dec": p.get("dec", 0.0),
-        })
+        points.append(
+            {
+                "mjd": float(mjd),
+                "mag": float(mag),
+                "magerr": float(magerr),
+                "fid": BAND_TO_FID[filt],
+                "ra": p.get("ra", 0.0),
+                "dec": p.get("dec", 0.0),
+            }
+        )
 
     if len(points) < 3:
         return None
@@ -235,12 +263,18 @@ def photometry_to_tensor(phot_data):
 def main():
     parser = argparse.ArgumentParser(description="Fetch Fritz sources and preprocess for RTF")
     parser.add_argument("--token", required=True, help="Fritz API token")
-    parser.add_argument("--group-ids", default="53,85,1876", help="Comma-separated group IDs (e.g. 53,85,1876)")
+    parser.add_argument(
+        "--group-ids", default="53,85,1876", help="Comma-separated group IDs (e.g. 53,85,1876)"
+    )
     parser.add_argument("--output-dir", default="fritz_sources", help="Output directory")
-    parser.add_argument("--saved-objects", default=None,
-                        help="Path to existing anomaly_scores.csv — will also fetch classifications for these obj IDs")
-    parser.add_argument("--max-sources", type=int, default=None,
-                        help="Max sources per group (for testing)")
+    parser.add_argument(
+        "--saved-objects",
+        default=None,
+        help="Path to existing anomaly_scores.csv — will also fetch classifications for these obj IDs",
+    )
+    parser.add_argument(
+        "--max-sources", type=int, default=None, help="Max sources per group (for testing)"
+    )
     args = parser.parse_args()
 
     group_ids = [int(g.strip()) for g in args.group_ids.split(",")]
@@ -279,20 +313,20 @@ def main():
             if os.path.exists(out_path):
                 total_preprocessed += 1
                 if (idx + 1) % 100 == 0:
-                    print(f"    [{idx+1}/{len(sources)}] {obj_id}: already exists, skipping")
+                    print(f"    [{idx + 1}/{len(sources)}] {obj_id}: already exists, skipping")
                 continue
 
             # Fetch photometry
             phot = fetch_photometry(args.token, obj_id)
             if phot is None:
-                print(f"    [{idx+1}/{len(sources)}] {obj_id}: no photometry, skipping")
+                print(f"    [{idx + 1}/{len(sources)}] {obj_id}: no photometry, skipping")
                 continue
             time.sleep(0.3)  # rate limit
 
             # Convert to tensor
             x = photometry_to_tensor(phot)
             if x is None:
-                print(f"    [{idx+1}/{len(sources)}] {obj_id}: <3 valid ZTF points, skipping")
+                print(f"    [{idx + 1}/{len(sources)}] {obj_id}: <3 valid ZTF points, skipping")
                 continue
 
             # Fetch richer classification via dedicated endpoint
@@ -318,22 +352,26 @@ def main():
             cls_prob = cls_info["probability"] if cls_info else ""
             cls_type = cls_info["classifier"] if cls_info else ""
 
-            manifest_rows.append({
-                "obj_id": obj_id,
-                "group_id": group_id,
-                "group_name": group_name,
-                "n_detections": L,
-                "classification": cls_best,
-                "classification_probability": cls_prob,
-                "classifier_type": cls_type,
-                "ra": src.get("ra", ""),
-                "dec": src.get("dec", ""),
-                "redshift": src.get("redshift", ""),
-            })
+            manifest_rows.append(
+                {
+                    "obj_id": obj_id,
+                    "group_id": group_id,
+                    "group_name": group_name,
+                    "n_detections": L,
+                    "classification": cls_best,
+                    "classification_probability": cls_prob,
+                    "classifier_type": cls_type,
+                    "ra": src.get("ra", ""),
+                    "dec": src.get("dec", ""),
+                    "redshift": src.get("redshift", ""),
+                }
+            )
             total_preprocessed += 1
 
             if (idx + 1) % 20 == 0:
-                print(f"    [{idx+1}/{len(sources)}] {total_preprocessed} sources preprocessed...")
+                print(
+                    f"    [{idx + 1}/{len(sources)}] {total_preprocessed} sources preprocessed..."
+                )
 
         print(f"  Group {group_name}: {total_preprocessed} total preprocessed so far")
 

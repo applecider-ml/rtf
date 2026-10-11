@@ -109,9 +109,7 @@ def fake_npz_dir(tmp_path):
         np.savez(
             tmp_path / f"ZTF_fake_{i:03d}.npz",
             data=data,
-            columns=np.array(
-                ["dt", "dt_prev", "band_id", "logflux", "logflux_err", "c5", "c6"]
-            ),
+            columns=np.array(["dt", "dt_prev", "band_id", "logflux", "logflux_err", "c5", "c6"]),
             label=label,
         )
     return tmp_path

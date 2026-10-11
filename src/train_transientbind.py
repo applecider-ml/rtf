@@ -32,7 +32,9 @@ from dataset import ShardedDataset, collate_fn
 from transientbind_model import TransientBind
 
 
-def train_one_epoch(model, loader, optimizer, epoch, total_epochs, device, grad_clip=1.0, grad_accum_steps=1):
+def train_one_epoch(
+    model, loader, optimizer, epoch, total_epochs, device, grad_clip=1.0, grad_accum_steps=1
+):
     """Train for one epoch with optional gradient accumulation."""
     model.train()
     metrics_sum = {}
@@ -69,7 +71,7 @@ def train_one_epoch(model, loader, optimizer, epoch, total_epochs, device, grad_
             avg_loss = metrics_sum.get("total_loss", 0) / n_batches
             rate = n_batches / elapsed if elapsed > 0 else 0
             print(
-                f"    Epoch {epoch+1}/{total_epochs} | batch {n_batches} | "
+                f"    Epoch {epoch + 1}/{total_epochs} | batch {n_batches} | "
                 f"loss={avg_loss:.4f} | "
                 f"acc_lc_img={metrics_sum.get('acc_lc_img', 0) / n_batches:.3f} | "
                 f"{rate:.1f} batch/s | {elapsed:.0f}s elapsed",
@@ -141,13 +143,23 @@ def main():
     parser.add_argument("--embed-dim", type=int, default=128)
     parser.add_argument("--enc-layers", type=int, default=4)
     parser.add_argument("--temperature", type=float, default=0.1)
-    parser.add_argument("--warmup-epochs", type=int, default=3,
-                        help="Linear LR warmup epochs (critical for contrastive)")
-    parser.add_argument("--grad-accum", type=int, default=1,
-                        help="Gradient accumulation steps (effective_batch = batch_size * grad_accum)")
+    parser.add_argument(
+        "--warmup-epochs",
+        type=int,
+        default=3,
+        help="Linear LR warmup epochs (critical for contrastive)",
+    )
+    parser.add_argument(
+        "--grad-accum",
+        type=int,
+        default=1,
+        help="Gradient accumulation steps (effective_batch = batch_size * grad_accum)",
+    )
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--num-workers", type=int, default=4)
-    parser.add_argument("--image-backbone", choices=["simple", "zoobot", "dinov2"], default="simple")
+    parser.add_argument(
+        "--image-backbone", choices=["simple", "zoobot", "dinov2"], default="simple"
+    )
     parser.add_argument("--resume-from", default=None, help="Path to checkpoint.pt to resume")
     args = parser.parse_args()
 
@@ -192,12 +204,14 @@ def main():
 
     # Warmup + cosine decay: linear warmup for first N epochs, then cosine
     warmup_epochs = args.warmup_epochs
+
     def lr_lambda(epoch):
         if epoch < warmup_epochs:
             return (epoch + 1) / warmup_epochs  # linear 0 → 1
         # Cosine decay from 1 → 0.01 over remaining epochs
         progress = (epoch - warmup_epochs) / max(args.epochs - warmup_epochs, 1)
         import math
+
         return 0.01 + 0.99 * 0.5 * (1 + math.cos(math.pi * progress))
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
@@ -221,7 +235,9 @@ def main():
     print(f"\n{'=' * 60}")
     print("TransientBind Training (v2 — with projection heads)")
     print(f"  Parameters: {n_params:,}")
-    print(f"  Batch size: {args.batch_size} × {args.grad_accum} accum = {effective_batch} effective")
+    print(
+        f"  Batch size: {args.batch_size} × {args.grad_accum} accum = {effective_batch} effective"
+    )
     print(f"  Embed dim: {args.embed_dim}")
     print(f"  Temperature: {args.temperature}")
     print(f"  LR warmup: {warmup_epochs} epochs")
@@ -233,8 +249,13 @@ def main():
     for epoch in range(start_epoch, args.epochs):
         t0 = time.time()
         train_m = train_one_epoch(
-            model, train_loader, optimizer, epoch, args.epochs,
-            args.device, grad_accum_steps=args.grad_accum,
+            model,
+            train_loader,
+            optimizer,
+            epoch,
+            args.epochs,
+            args.device,
+            grad_accum_steps=args.grad_accum,
         )
         scheduler.step()
         dt = time.time() - t0
@@ -265,7 +286,7 @@ def main():
         torch.save(ckpt, os.path.join(args.output_dir, "checkpoint.pt"))
 
         print(
-            f"  [{epoch+1:3d}/{args.epochs}] "
+            f"  [{epoch + 1:3d}/{args.epochs}] "
             f"loss={train_m['total_loss']:.4f} "
             f"lc↔img={train_m['loss_lc_img']:.4f} "
             f"lc↔meta={train_m['loss_lc_meta']:.4f} "
@@ -279,7 +300,8 @@ def main():
     print("\nLoading best model for embedding extraction...")
     best_state = torch.load(
         os.path.join(args.output_dir, "best_model.pt"),
-        weights_only=True, map_location=args.device,
+        weights_only=True,
+        map_location=args.device,
     )
     model.load_state_dict(best_state)
 

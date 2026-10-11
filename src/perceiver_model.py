@@ -48,7 +48,10 @@ class CrossAttentionBlock(nn.Module):
         self.norm_q = nn.LayerNorm(d_model)
         self.norm_kv = nn.LayerNorm(d_model)
         self.attn = nn.MultiheadAttention(
-            d_model, n_heads, dropout=dropout, batch_first=True,
+            d_model,
+            n_heads,
+            dropout=dropout,
+            batch_first=True,
         )
         self.norm_ff = nn.LayerNorm(d_model)
         self.ffn = nn.Sequential(
@@ -77,7 +80,9 @@ class CrossAttentionBlock(nn.Module):
         q_normed = self.norm_q(query)
         kv_normed = self.norm_kv(kv)
         attn_out, _ = self.attn(
-            q_normed, kv_normed, kv_normed,
+            q_normed,
+            kv_normed,
+            kv_normed,
             key_padding_mask=key_padding_mask,
         )
         query = query + attn_out
@@ -97,7 +102,10 @@ class SelfAttentionBlock(nn.Module):
         super().__init__()
         self.norm_attn = nn.LayerNorm(d_model)
         self.attn = nn.MultiheadAttention(
-            d_model, n_heads, dropout=dropout, batch_first=True,
+            d_model,
+            n_heads,
+            dropout=dropout,
+            batch_first=True,
         )
         self.norm_ff = nn.LayerNorm(d_model)
         self.ffn = nn.Sequential(
@@ -143,16 +151,14 @@ class PerceiverEncoder(nn.Module):
         self.latent_array = nn.Parameter(torch.randn(n_latents, d_model) * 0.02)
 
         # Cross-attention layers (latents attend to input tokens)
-        self.cross_layers = nn.ModuleList([
-            CrossAttentionBlock(d_model, n_heads, dropout)
-            for _ in range(n_cross)
-        ])
+        self.cross_layers = nn.ModuleList(
+            [CrossAttentionBlock(d_model, n_heads, dropout) for _ in range(n_cross)]
+        )
 
         # Self-attention layers (latents attend to each other)
-        self.self_layers = nn.ModuleList([
-            SelfAttentionBlock(d_model, n_heads, dropout)
-            for _ in range(n_self)
-        ])
+        self.self_layers = nn.ModuleList(
+            [SelfAttentionBlock(d_model, n_heads, dropout) for _ in range(n_self)]
+        )
 
         self.norm = nn.LayerNorm(d_model)
 
@@ -208,8 +214,8 @@ class PerceiverDecoder(nn.Module):
         self.cross_attn = CrossAttentionBlock(d_model, n_heads, dropout)
 
         # Prediction heads
-        self.head_cont = nn.Linear(d_model, 4)   # dt, dt_prev, flux, flux_err
-        self.head_band = nn.Linear(d_model, 3)   # band logits (g, r, i)
+        self.head_cont = nn.Linear(d_model, 4)  # dt, dt_prev, flux, flux_err
+        self.head_band = nn.Linear(d_model, 3)  # band logits (g, r, i)
 
     def forward(
         self,
@@ -358,24 +364,24 @@ class PerceiverAutoencoder(nn.Module):
         B, _L, _ = x.shape
 
         # Split channels
-        x_phot = x[:, :, :7]     # (B, L, 7)
-        x_meta = x[:, :, 7:]     # (B, L, 30)
+        x_phot = x[:, :, :7]  # (B, L, 7)
+        x_meta = x[:, :, 7:]  # (B, L, 30)
 
         # Photometry tokens
-        phot_tokens = self.phot_proj(x_phot)              # (B, L, d_model)
+        phot_tokens = self.phot_proj(x_phot)  # (B, L, d_model)
         phot_tokens = phot_tokens + self.meta_obs_proj(x_meta)  # add per-obs metadata
         phot_tokens = phot_tokens + self.time2vec(x[:, :, 0])  # add time encoding
-        phot_tokens = phot_tokens + self.modality_emb_phot      # add modality ID
+        phot_tokens = phot_tokens + self.modality_emb_phot  # add modality ID
 
         # Image token
-        img_emb = self.image_tower(images)                # (B, d_model)
-        img_token = img_emb.unsqueeze(1)                  # (B, 1, d_model)
+        img_emb = self.image_tower(images)  # (B, d_model)
+        img_token = img_emb.unsqueeze(1)  # (B, 1, d_model)
         img_token = img_token + self.modality_emb_img
 
         # Metadata summary token
-        static_meta = x_meta.mean(dim=1)                  # (B, 30)
-        meta_emb = self.meta_summary_mlp(static_meta)     # (B, d_model)
-        meta_token = meta_emb.unsqueeze(1)                # (B, 1, d_model)
+        static_meta = x_meta.mean(dim=1)  # (B, 30)
+        meta_emb = self.meta_summary_mlp(static_meta)  # (B, d_model)
+        meta_token = meta_emb.unsqueeze(1)  # (B, 1, d_model)
         meta_token = meta_token + self.modality_emb_meta
 
         # Concatenate: [phot_0, ..., phot_L-1, img, meta]
@@ -493,15 +499,15 @@ class PerceiverAutoencoder(nn.Module):
             dict with 'total_loss', 'recon_cont', 'recon_band', 'band_acc'
         """
         mask_indices = forward_out["mask_indices"]  # (B, n_mask)
-        mask_valid = forward_out["mask_valid"]      # (B, n_mask) True = real mask
-        cont_pred = forward_out["cont_pred"]        # (B, n_mask, 4)
-        band_pred = forward_out["band_pred"]        # (B, n_mask, 3)
+        mask_valid = forward_out["mask_valid"]  # (B, n_mask) True = real mask
+        cont_pred = forward_out["cont_pred"]  # (B, n_mask, 4)
+        band_pred = forward_out["band_pred"]  # (B, n_mask, 3)
         B, n_mask = mask_indices.shape
 
         # Gather targets at masked positions
         batch_idx = torch.arange(B, device=x.device).unsqueeze(1).expand(-1, n_mask)
 
-        cont_target = x[batch_idx, mask_indices, :4]         # (B, n_mask, 4)
+        cont_target = x[batch_idx, mask_indices, :4]  # (B, n_mask, 4)
         band_target = x[batch_idx, mask_indices, 4:7].argmax(-1)  # (B, n_mask)
 
         # Use mask_valid: only count loss on positions that were actually masked
@@ -605,6 +611,8 @@ class PerceiverAutoencoder(nn.Module):
         valid_mask = valid[batch_idx, mask_indices]
 
         per_sample_err = ((cont_pred - cont_target) ** 2).mean(dim=-1)  # (B, max_valid)
-        per_sample_err = (per_sample_err * valid_mask).sum(dim=1) / valid_mask.sum(dim=1).clamp(min=1)
+        per_sample_err = (per_sample_err * valid_mask).sum(dim=1) / valid_mask.sum(dim=1).clamp(
+            min=1
+        )
 
         return per_sample_err  # (B,)

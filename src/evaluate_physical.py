@@ -47,9 +47,7 @@ def load_stats(data_dir):
     """Load normalization stats and return (mean, std) as flat 1D arrays."""
     path = os.path.join(data_dir, "feature_stats_day100.npz")
     st = np.load(path)
-    return st["mean"].flatten().astype(np.float32), st["std"].flatten().astype(
-        np.float32
-    )
+    return st["mean"].flatten().astype(np.float32), st["std"].flatten().astype(np.float32)
 
 
 def denormalize_batch(x_norm, mean, std):
@@ -65,9 +63,7 @@ def denormalize_batch(x_norm, mean, std):
         logflux_err: (B, L) log10(flux) uncertainty
         band: (B, L) integer band index
     """
-    cont = (
-        x_norm[..., :4].numpy() if isinstance(x_norm, torch.Tensor) else x_norm[..., :4]
-    )
+    cont = x_norm[..., :4].numpy() if isinstance(x_norm, torch.Tensor) else x_norm[..., :4]
     # Undo normalization
     cont_phys = cont * std + mean
     # Undo log1p for time channels
@@ -113,9 +109,7 @@ def compute_physical_metrics(model, loader, mean, std, device):
 
         # Denormalize both
         dt_orig, mag_orig, _magerr_orig, band_orig = denormalize_batch(x_orig, mean, std)
-        dt_recon, mag_recon, _magerr_recon, band_recon = denormalize_batch(
-            x_recon, mean, std
-        )
+        dt_recon, mag_recon, _magerr_recon, band_recon = denormalize_batch(x_recon, mean, std)
 
         B = x.shape[0]
         for i in range(B):
@@ -153,9 +147,7 @@ def compute_physical_metrics(model, loader, mean, std, device):
     return all_results
 
 
-def plot_reconstructed_lightcurves(
-    model, loader, mean, std, device, output_dir, n_per_class=3
-):
+def plot_reconstructed_lightcurves(model, loader, mean, std, device, output_dir, n_per_class=3):
     """Plot original vs reconstructed light curves for sample sources."""
     model.eval()
     os.makedirs(output_dir, exist_ok=True)
@@ -174,9 +166,7 @@ def plot_reconstructed_lightcurves(
             cont_hat = cont_hat[:, :L]
             band_logits = band_logits[:, :L]
 
-            band_pred_oh = torch.nn.functional.one_hot(
-                band_logits.argmax(-1), 3
-            ).float()
+            band_pred_oh = torch.nn.functional.one_hot(band_logits.argmax(-1), 3).float()
             x_recon = torch.cat([cont_hat, band_pred_oh], dim=-1).cpu()
             x_orig = x.cpu()
             valid = ~pad_mask.cpu()
@@ -202,12 +192,8 @@ def plot_reconstructed_lightcurves(
     for cls, samples in samples_by_class.items():
         for s in samples:
             v = s["valid"].numpy()
-            dt_o, mag_o, _, band_o = denormalize_batch(
-                s["x_orig"].unsqueeze(0), mean, std
-            )
-            dt_r, mag_r, _, band_r = denormalize_batch(
-                s["x_recon"].unsqueeze(0), mean, std
-            )
+            dt_o, mag_o, _, band_o = denormalize_batch(s["x_orig"].unsqueeze(0), mean, std)
+            dt_r, mag_r, _, band_r = denormalize_batch(s["x_recon"].unsqueeze(0), mean, std)
             dt_o, mag_o, band_o = dt_o[0][v], mag_o[0][v], band_o[0][v]
             dt_r, mag_r, band_r = dt_r[0][v], mag_r[0][v], band_r[0][v]
 
@@ -283,9 +269,7 @@ def summarize_results(results, output_dir):
             continue
         per_class[cls_name] = {
             "n": len(cls_results),
-            "mag_residual_mean": float(
-                np.mean([r["mag_residual_mean"] for r in cls_results])
-            ),
+            "mag_residual_mean": float(np.mean([r["mag_residual_mean"] for r in cls_results])),
             "mag_residual_median": float(
                 np.median([r["mag_residual_median"] for r in cls_results])
             ),
@@ -296,11 +280,7 @@ def summarize_results(results, output_dir):
     # Per-band
     per_band = {}
     for band_name in ["g", "r", "i"]:
-        vals = [
-            r["per_band_mag"].get(band_name)
-            for r in results
-            if band_name in r["per_band_mag"]
-        ]
+        vals = [r["per_band_mag"].get(band_name) for r in results if band_name in r["per_band_mag"]]
         if vals:
             per_band[band_name] = {
                 "mag_residual_mean": float(np.mean(vals)),
@@ -338,9 +318,7 @@ def summarize_results(results, output_dir):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Physical-unit reconstruction evaluation"
-    )
+    parser = argparse.ArgumentParser(description="Physical-unit reconstruction evaluation")
     parser.add_argument("--runs-dir", required=True)
     parser.add_argument("--data-dir", required=True)
     parser.add_argument("--output-dir", required=True)
@@ -351,9 +329,7 @@ def main():
         help="Specific run dirs to evaluate (default: all)",
     )
     parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument(
-        "--device", default="cuda" if torch.cuda.is_available() else "cpu"
-    )
+    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument(
         "--plot-per-class",
         type=int,
@@ -365,9 +341,7 @@ def main():
     mean, std = load_stats(args.data_dir)
     stats_path = os.path.join(args.data_dir, "feature_stats_day100.npz")
 
-    test_ds = PhotoNPZDataset(
-        os.path.join(args.data_dir, "test"), stats_path, horizon=100.0
-    )
+    test_ds = PhotoNPZDataset(os.path.join(args.data_dir, "test"), stats_path, horizon=100.0)
     test_loader = DataLoader(
         test_ds,
         batch_size=args.batch_size,
@@ -378,11 +352,7 @@ def main():
     )
 
     run_dirs = args.models or sorted(
-        [
-            d
-            for d in os.listdir(args.runs_dir)
-            if os.path.isdir(os.path.join(args.runs_dir, d))
-        ]
+        [d for d in os.listdir(args.runs_dir) if os.path.isdir(os.path.join(args.runs_dir, d))]
     )
 
     all_summaries = []
@@ -407,9 +377,7 @@ def main():
             latent_dim=latent_dim,
             num_codes=run_summary.get("num_codes", 512),
         ).to(args.device)
-        model.load_state_dict(
-            torch.load(model_path, map_location=args.device, weights_only=True)
-        )
+        model.load_state_dict(torch.load(model_path, map_location=args.device, weights_only=True))
 
         out_subdir = os.path.join(args.output_dir, d)
 

@@ -10,6 +10,7 @@ in the bottleneck:
 Input: (B, L, 7) padded photometry sequences
   channels: [log1p(dt), log1p(dt_prev), logflux, logflux_err, band_g, band_r, band_i]
 """
+
 from __future__ import annotations
 
 import torch
@@ -87,17 +88,11 @@ class VectorQuantizer(nn.Module):
                     one_hot.sum(0), alpha=1 - self.ema_decay
                 )
                 embed_sum = one_hot.t() @ z_e
-                self.ema_embed_sum.mul_(self.ema_decay).add_(
-                    embed_sum, alpha=1 - self.ema_decay
-                )
+                self.ema_embed_sum.mul_(self.ema_decay).add_(embed_sum, alpha=1 - self.ema_decay)
                 # Laplace smoothing
                 n = self.ema_cluster_size.sum()
-                cluster_size = (
-                    (self.ema_cluster_size + 1e-5) / (n + self.num_codes * 1e-5) * n
-                )
-                self.codebook.weight.data.copy_(
-                    self.ema_embed_sum / cluster_size.unsqueeze(1)
-                )
+                cluster_size = (self.ema_cluster_size + 1e-5) / (n + self.num_codes * 1e-5) * n
+                self.codebook.weight.data.copy_(self.ema_embed_sum / cluster_size.unsqueeze(1))
 
         # Losses
         codebook_loss = F.mse_loss(z_q.detach(), z_e)  # commitment
@@ -174,7 +169,7 @@ class ImageTower(nn.Module):
 
         # Zoobot model registry: all pretrained on Galaxy Zoo morphology labels
         zoobot_models = {
-            "pico":  ("hf_hub:mwalmsley/zoobot-encoder-convnext_pico",  "convnext_pico"),
+            "pico": ("hf_hub:mwalmsley/zoobot-encoder-convnext_pico", "convnext_pico"),
             "large": ("hf_hub:mwalmsley/zoobot-encoder-convnext_large", "convnext_large"),
         }
         hf_id, fallback_id = zoobot_models[model_size]
@@ -191,9 +186,7 @@ class ImageTower(nn.Module):
                 f"  Warning: Zoobot {model_size} weights not available, "
                 f"using ImageNet {fallback_id}"
             )
-            self.cnn = timm.create_model(
-                fallback_id, pretrained=True, num_classes=0
-            )
+            self.cnn = timm.create_model(fallback_id, pretrained=True, num_classes=0)
 
         if freeze_backbone:
             for param in self.cnn.parameters():
@@ -208,7 +201,7 @@ class ImageTower(nn.Module):
 
     def _init_dinov2(self, d_model, dropout, freeze_backbone):
         """Load DINOv2 ViT-S/14 via timm.
-        
+
         Using timm bypasses a Python 3.9 incompatibility introduced
         in the facebookresearch/dinov2 main branch on torch.hub.
         """
@@ -223,7 +216,7 @@ class ImageTower(nn.Module):
             "vit_small_patch14_dinov2.lvd142m",
             pretrained=True,
             num_classes=0,  # Remove head, output 384-D feature vector
-            img_size=224,   # Force internal positional embeddings to match Zoobot's resolution
+            img_size=224,  # Force internal positional embeddings to match Zoobot's resolution
         )
 
         if freeze_backbone:
@@ -236,9 +229,7 @@ class ImageTower(nn.Module):
             nn.Linear(384, d_model),
         )
 
-    def _run_cnn_subbatch(
-        self, images: torch.Tensor, max_sub: int = 32
-    ) -> torch.Tensor:
+    def _run_cnn_subbatch(self, images: torch.Tensor, max_sub: int = 32) -> torch.Tensor:
         """Run CNN in sub-batches, with or without gradients."""
         if self.freeze_backbone:
             # No gradients needed for frozen backbone
@@ -254,9 +245,7 @@ class ImageTower(nn.Module):
             chunk = images[i : i + max_sub]
             with ctx():
                 if not self.freeze_backbone and hasattr(torch.utils, "checkpoint"):
-                    feat = torch.utils.checkpoint.checkpoint(
-                        self.cnn, chunk, use_reentrant=False
-                    )
+                    feat = torch.utils.checkpoint.checkpoint(self.cnn, chunk, use_reentrant=False)
                 else:
                     feat = self.cnn(chunk)
             feats.append(feat)
@@ -265,9 +254,7 @@ class ImageTower(nn.Module):
     def forward(self, images: torch.Tensor) -> torch.Tensor:
         """images: (N, 3, 63, 63) → (N, d_model)"""
         if self.backbone_name in ("zoobot", "zoobot_large", "dinov2"):
-            images = F.interpolate(
-                images, size=(224, 224), mode="bilinear", align_corners=False
-            )
+            images = F.interpolate(images, size=(224, 224), mode="bilinear", align_corners=False)
             cnn_out = self._run_cnn_subbatch(images)
             return self.proj(cnn_out)
         return self.proj(self.cnn(images))
@@ -640,15 +627,11 @@ class LightCurveCompressor(nn.Module):
 
         # Band reconstruction
         band_target = x[..., 4:7].argmax(-1)
-        ce = F.cross_entropy(
-            band_logits.reshape(-1, 3), band_target.reshape(-1), reduction="none"
-        )
+        ce = F.cross_entropy(band_logits.reshape(-1, 3), band_target.reshape(-1), reduction="none")
         recon_band = (ce.reshape(B, L) * valid).sum() / n_valid
 
         # Band accuracy
-        band_acc = (
-            (band_logits.argmax(-1) == band_target) * valid
-        ).sum().item() / n_valid.item()
+        band_acc = ((band_logits.argmax(-1) == band_target) * valid).sum().item() / n_valid.item()
 
         # Extract latent vector for classification (same for all modes)
         if self.mode == "ae":
@@ -664,12 +647,7 @@ class LightCurveCompressor(nn.Module):
         cls_loss_val = 0.0
         cls_acc = 0.0
         cls_loss_tensor = torch.tensor(0.0, device=x.device)
-        if (
-            self.num_classes > 0
-            and labels is not None
-            and cls_weight > 0
-            and z_cls is not None
-        ):
+        if self.num_classes > 0 and labels is not None and cls_weight > 0 and z_cls is not None:
             cls_logits = self.cls_head(z_cls)
             cls_loss_tensor = F.cross_entropy(cls_logits, labels)
             cls_loss_val = cls_loss_tensor.item()
@@ -682,16 +660,9 @@ class LightCurveCompressor(nn.Module):
             color_targets, has_color = self._compute_color_targets(x, pad_mask)
             color_pred = self.color_head(z_cls)  # (B, 3)
             if has_color.sum() > 0:
-                color_loss_tensor = F.mse_loss(
-                    color_pred[has_color], color_targets[has_color]
-                )
+                color_loss_tensor = F.mse_loss(color_pred[has_color], color_targets[has_color])
                 color_loss_val = color_loss_tensor.item()
-                color_mae = (
-                    (color_pred[has_color] - color_targets[has_color])
-                    .abs()
-                    .mean()
-                    .item()
-                )
+                color_mae = (color_pred[has_color] - color_targets[has_color]).abs().mean().item()
             else:
                 color_loss_tensor = torch.tensor(0.0, device=x.device)
         else:
@@ -713,14 +684,18 @@ class LightCurveCompressor(nn.Module):
                     gp_pred = gp_pred[:, :n_tgt]
                 elif n_tgt > n_pred:
                     gp_targets = gp_targets[:, :n_pred]
-                gp_loss_tensor = F.mse_loss(
-                    gp_pred[has_gp], gp_targets[has_gp]
-                )
+                gp_loss_tensor = F.mse_loss(gp_pred[has_gp], gp_targets[has_gp])
                 gp_loss_val = gp_loss_tensor.item()
 
         # Mode-specific regularization
         if self.mode == "ae":
-            total = recon_cont + band_weight * recon_band + cls_weight * cls_loss_tensor + color_weight * color_loss_tensor + gp_weight * gp_loss_tensor
+            total = (
+                recon_cont
+                + band_weight * recon_band
+                + cls_weight * cls_loss_tensor
+                + color_weight * color_loss_tensor
+                + gp_weight * gp_loss_tensor
+            )
             return {
                 "total_loss": total,
                 "recon_cont": recon_cont.item(),
@@ -742,7 +717,14 @@ class LightCurveCompressor(nn.Module):
             if self.free_bits > 0:
                 kld_per_dim = kld_per_dim.clamp(min=self.free_bits)
             kld = kld_per_dim.sum(-1).mean()
-            total = recon_cont + band_weight * recon_band + beta * kld + cls_weight * cls_loss_tensor + color_weight * color_loss_tensor + gp_weight * gp_loss_tensor
+            total = (
+                recon_cont
+                + band_weight * recon_band
+                + beta * kld
+                + cls_weight * cls_loss_tensor
+                + color_weight * color_loss_tensor
+                + gp_weight * gp_loss_tensor
+            )
             return {
                 "total_loss": total,
                 "recon_cont": recon_cont.item(),
@@ -760,7 +742,14 @@ class LightCurveCompressor(nn.Module):
             }
 
         elif self.mode == "vqvae":
-            total = recon_cont + band_weight * recon_band + vq_loss + cls_weight * cls_loss_tensor + color_weight * color_loss_tensor + gp_weight * gp_loss_tensor
+            total = (
+                recon_cont
+                + band_weight * recon_band
+                + vq_loss
+                + cls_weight * cls_loss_tensor
+                + color_weight * color_loss_tensor
+                + gp_weight * gp_loss_tensor
+            )
             # Codebook utilization
             n_unique = indices.unique().numel()
             return {
@@ -816,9 +805,9 @@ class LightCurveCompressor(nn.Module):
         valid = ~pad_mask
         n_valid = valid.sum(dim=1).clamp(min=1).float()
 
-        cont_err = ((cont_hat - x[..., :4]) ** 2 * valid.unsqueeze(-1)).sum(
-            dim=(1, 2)
-        ) / (n_valid * 4)
+        cont_err = ((cont_hat - x[..., :4]) ** 2 * valid.unsqueeze(-1)).sum(dim=(1, 2)) / (
+            n_valid * 4
+        )
         band_target = x[..., 4:7].argmax(-1)
         B, L_act = band_target.shape
         ce = F.cross_entropy(

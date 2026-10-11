@@ -10,6 +10,7 @@ Four dataset classes:
 ShardedDataset is preferred for large-scale training — it eliminates the
 catastrophic GPFS file-open overhead of 1.74M individual np.load() calls.
 """
+
 from __future__ import annotations
 
 import csv
@@ -169,9 +170,7 @@ class AlertDataset(Dataset):
         # Photometry
         fids = np.array([a["candidate"]["fid"] for a in alerts])
         magpsf = np.array([a["candidate"]["magpsf"] for a in alerts], dtype=np.float32)
-        sigmapsf = np.array(
-            [a["candidate"]["sigmapsf"] for a in alerts], dtype=np.float32
-        )
+        sigmapsf = np.array([a["candidate"]["sigmapsf"] for a in alerts], dtype=np.float32)
 
         # Convert mag to logflux: logflux = -0.4 * magpsf + const (we drop const, relative is fine)
         logflux = (-0.4 * magpsf).astype(np.float32)
@@ -289,9 +288,7 @@ class MetaNPZDataset(Dataset):
             if self.use_images:
                 result["image"] = torch.zeros(3, 63, 63)
             if self.use_gp:
-                result["gp_features"] = torch.zeros(
-                    1
-                )  # placeholder, real size set at collate
+                result["gp_features"] = torch.zeros(1)  # placeholder, real size set at collate
             return result
 
     def _load_item(self, idx):
@@ -375,9 +372,7 @@ class MetaNPZDataset(Dataset):
                     for f in self.files[:100]:
                         n = np.load(f, allow_pickle=True)
                         if "gp_keys" in n and len(n["gp_keys"]) == 114:
-                            self._canonical_gp_keys = {
-                                k: i for i, k in enumerate(n["gp_keys"])
-                            }
+                            self._canonical_gp_keys = {k: i for i, k in enumerate(n["gp_keys"])}
                             break
                 gp_padded = np.zeros(114, dtype=np.float32)
                 if self._canonical_gp_keys is not None:
@@ -448,8 +443,10 @@ class ShardedDataset(IterableDataset):
         # so the non-meta prefix = in_channels - N_META.
         self.n_base_channels = self.in_channels - N_META
         del peek
-        print(f"  [SHARDS] Auto-detected {self.in_channels} channels "
-              f"(base+band={self.n_base_channels}, meta={N_META})")
+        print(
+            f"  [SHARDS] Auto-detected {self.in_channels} channels "
+            f"(base+band={self.n_base_channels}, meta={N_META})"
+        )
 
         # Estimate total samples without loading any shards.
         # pack_shards.py writes exactly SHARD_SIZE (20,000) samples per shard,
@@ -458,8 +455,10 @@ class ShardedDataset(IterableDataset):
         # yields the actual samples regardless.
         shard_size = 20_000
         self._total = shard_size * (len(self.shard_files) - 1) + shard_size  # upper bound
-        print(f"  [SHARDS] ~{self._total:,} samples across "
-              f"{len(self.shard_files)} shards (streaming mode, ~1GB peak RAM)")
+        print(
+            f"  [SHARDS] ~{self._total:,} samples across "
+            f"{len(self.shard_files)} shards (streaming mode, ~1GB peak RAM)"
+        )
 
     def __len__(self):
         return self._total
@@ -473,8 +472,7 @@ class ShardedDataset(IterableDataset):
             # Split shards across workers (no duplicates)
             n_workers = worker_info.num_workers
             worker_id = worker_info.id
-            shard_indices = [i for i in shard_indices
-                            if i % n_workers == worker_id]
+            shard_indices = [i for i in shard_indices if i % n_workers == worker_id]
 
         # Shuffle shard order for this epoch
         random.shuffle(shard_indices)
@@ -487,8 +485,9 @@ class ShardedDataset(IterableDataset):
 
             # Print progress (only from worker 0 or main process)
             if (worker_info is None or worker_info.id == 0) and ((si + 1) % 5 == 0 or si == 0):
-                    print(f"    [shard {si+1}/{len(shard_indices)}] "
-                          f"{yielded:,} samples streamed so far")
+                print(
+                    f"    [shard {si + 1}/{len(shard_indices)}] {yielded:,} samples streamed so far"
+                )
 
             # Shuffle sample order within this shard
             indices = list(range(n))
@@ -561,7 +560,7 @@ class ShardedDataset(IterableDataset):
                         padded[:actual_dim] = gp
                         gp = padded
                     else:
-                        gp = gp[:self.gp_dim]
+                        gp = gp[: self.gp_dim]
                     # Clean up non-finite values
                     gp = torch.nan_to_num(gp, nan=0.0, posinf=0.0, neginf=0.0)
                     gp = gp.clamp(-10.0, 10.0)

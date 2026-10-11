@@ -74,12 +74,12 @@ def infer_single(model, x_np, image_np, device):
         x_np = x_np[:MAX_LEN]
 
     # Build batch of 1
-    x = torch.from_numpy(x_np).unsqueeze(0).to(device)        # (1, L, 37)
+    x = torch.from_numpy(x_np).unsqueeze(0).to(device)  # (1, L, 37)
     pad_mask = torch.zeros(1, x.shape[1], dtype=torch.bool).to(device)  # no padding
     images = torch.from_numpy(image_np).unsqueeze(0).to(device)  # (1, 3, 63, 63)
 
     with torch.no_grad():
-        emb = model.embed(x, pad_mask, images)             # (1, 128)
+        emb = model.embed(x, pad_mask, images)  # (1, 128)
         recon_err = model.reconstruction_error(x, pad_mask, images)  # (1,)
 
     return emb[0].cpu().numpy(), recon_err[0].item()
@@ -140,7 +140,7 @@ def main():
             images = data["images"]  # (3, 63, 63)
 
             if x.shape[0] < 3:
-                print(f"  [{idx+1}] {obj_id}: too few detections ({x.shape[0]}), skipping")
+                print(f"  [{idx + 1}] {obj_id}: too few detections ({x.shape[0]}), skipping")
                 continue
 
             # Get embedding + reconstruction error
@@ -156,22 +156,24 @@ def main():
             classification = info.get("classification", "")
             n_det = x.shape[0]
 
-            results.append({
-                "obj_id": obj_id,
-                "group_name": group_name,
-                "n_detections": n_det,
-                "classification": classification,
-                "recon_error": round(recon_error, 6),
-                "if_score": round(if_score, 6),
-            })
+            results.append(
+                {
+                    "obj_id": obj_id,
+                    "group_name": group_name,
+                    "n_detections": n_det,
+                    "classification": classification,
+                    "recon_error": round(recon_error, 6),
+                    "if_score": round(if_score, 6),
+                }
+            )
 
         except Exception as e:
-            print(f"  [{idx+1}] {obj_id}: ERROR - {e}")
+            print(f"  [{idx + 1}] {obj_id}: ERROR - {e}")
             continue
 
         if (idx + 1) % 50 == 0:
             elapsed = time.time() - t0
-            print(f"  [{idx+1}/{len(npz_files)}] {elapsed:.1f}s elapsed")
+            print(f"  [{idx + 1}/{len(npz_files)}] {elapsed:.1f}s elapsed")
 
     elapsed = time.time() - t0
     print(f"\n  Processed {len(results)} sources in {elapsed:.1f}s")
@@ -209,8 +211,15 @@ def main():
     results.sort(key=lambda r: r["anomaly_score"], reverse=True)
 
     # ── Write CSV ──
-    fieldnames = ["obj_id", "group_name", "n_detections", "classification",
-                  "recon_error", "if_score", "anomaly_score"]
+    fieldnames = [
+        "obj_id",
+        "group_name",
+        "n_detections",
+        "classification",
+        "recon_error",
+        "if_score",
+        "anomaly_score",
+    ]
     with open(args.output, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -224,15 +233,17 @@ def main():
 
     for group in sorted(groups_seen):
         group_results = [r for r in results if r["group_name"] == group]
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"  TOP 10 MOST ANOMALOUS — {group} ({len(group_results)} total)")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"  {'Rank':<5} {'Object ID':<20} {'Score':<8} {'Recon':<10} {'IF':<10} {'Class'}")
-        print(f"  {'-'*5} {'-'*20} {'-'*8} {'-'*10} {'-'*10} {'-'*20}")
+        print(f"  {'-' * 5} {'-' * 20} {'-' * 8} {'-' * 10} {'-' * 10} {'-' * 20}")
         for rank, r in enumerate(group_results[:10], 1):
-            print(f"  {rank:<5} {r['obj_id']:<20} {r['anomaly_score']:<8.4f} "
-                  f"{r['recon_error']:<10.6f} {r['if_score']:<10.4f} "
-                  f"{r['classification'][:20]}")
+            print(
+                f"  {rank:<5} {r['obj_id']:<20} {r['anomaly_score']:<8.4f} "
+                f"{r['recon_error']:<10.6f} {r['if_score']:<10.4f} "
+                f"{r['classification'][:20]}"
+            )
 
     print("\n=== DONE ===")
     print(f"  Total scored: {len(results)}")

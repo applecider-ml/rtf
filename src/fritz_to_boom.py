@@ -44,10 +44,10 @@ def convert_fritz_to_boom(fritz_npz_path, output_npz_path):
         return 0
 
     # Extract columns from the (L, 37) tensor
-    log1p_dt = x[:, 0]       # log1p(dt) → dt = expm1(log1p_dt)
+    log1p_dt = x[:, 0]  # log1p(dt) → dt = expm1(log1p_dt)
     log1p_dt_prev = x[:, 1]  # log1p(dt_prev) → dt_prev = expm1(log1p_dt_prev)
-    logflux = x[:, 2]        # already log10-ish flux (= -0.4 * mag)
-    logflux_err = x[:, 3]    # already flux error (= 0.4 * magerr)
+    logflux = x[:, 2]  # already log10-ish flux (= -0.4 * mag)
+    logflux_err = x[:, 3]  # already flux error (= 0.4 * magerr)
     one_hot_band = x[:, 4:7]  # (L, 3) one-hot: g, r, i
 
     # Invert log1p to get actual dt values
@@ -78,22 +78,20 @@ def convert_fritz_to_boom(fritz_npz_path, output_npz_path):
     boom_logflux_err = logflux_err.astype(np.float32)
 
     # Validate: filter out non-finite values
-    valid = (
-        np.isfinite(boom_logflux) &
-        np.isfinite(boom_logflux_err) &
-        (boom_logflux_err > 0)
-    )
+    valid = np.isfinite(boom_logflux) & np.isfinite(boom_logflux_err) & (boom_logflux_err > 0)
     if valid.sum() < 5:
         return 0
 
     # Stack into (N, 5) array
-    boom_data = np.column_stack([
-        dt[valid],
-        dt_prev[valid],
-        band_id[valid],
-        boom_logflux[valid],
-        boom_logflux_err[valid],
-    ]).astype(np.float32)
+    boom_data = np.column_stack(
+        [
+            dt[valid],
+            dt_prev[valid],
+            band_id[valid],
+            boom_logflux[valid],
+            boom_logflux_err[valid],
+        ]
+    ).astype(np.float32)
 
     # Save as NPZ with key 'data'
     np.savez_compressed(output_npz_path, data=boom_data)
@@ -136,7 +134,7 @@ def main():
             n_skip += 1
 
         if (idx + 1) % 500 == 0:
-            print(f"  [{idx+1}/{len(npz_files)}] {n_success} converted, {n_skip} skipped")
+            print(f"  [{idx + 1}/{len(npz_files)}] {n_success} converted, {n_skip} skipped")
 
     # Write sources.csv
     sources_csv = output_dir / "sources.csv"

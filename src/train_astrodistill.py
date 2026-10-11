@@ -45,8 +45,16 @@ def cosine_ema_schedule(epoch: int, total_epochs: int, ema_start: float, ema_end
 
 
 def train_one_epoch(
-    model, loader, optimizer, epoch, total_epochs, device,
-    ema_start, ema_end, grad_clip=1.0, grad_accum_steps=1,
+    model,
+    loader,
+    optimizer,
+    epoch,
+    total_epochs,
+    device,
+    ema_start,
+    ema_end,
+    grad_clip=1.0,
+    grad_accum_steps=1,
 ):
     """Train for one epoch with EMA teacher updates."""
     model.train()
@@ -85,7 +93,7 @@ def train_one_epoch(
             avg_loss = loss_sum / n_batches
             rate = n_batches / elapsed if elapsed > 0 else 0
             print(
-                f"    Epoch {epoch+1}/{total_epochs} | batch {n_batches} | "
+                f"    Epoch {epoch + 1}/{total_epochs} | batch {n_batches} | "
                 f"loss={avg_loss:.4f} | ema={ema_decay:.4f} | "
                 f"{rate:.1f} batch/s | {elapsed:.0f}s elapsed",
                 flush=True,
@@ -134,19 +142,33 @@ def main():
     parser.add_argument("--embed-dim", type=int, default=128)
     parser.add_argument("--n-layers", type=int, default=4)
     parser.add_argument("--mask-ratio", type=float, default=0.5)
-    parser.add_argument("--ema-decay", type=float, default=0.999,
-                        help="Initial EMA decay for teacher")
-    parser.add_argument("--ema-end", type=float, default=0.9999,
-                        help="Final EMA decay for teacher (cosine schedule)")
-    parser.add_argument("--top-k-layers", type=int, default=2,
-                        help="Average top-K transformer layers for teacher targets")
-    parser.add_argument("--warmup-epochs", type=int, default=3,
-                        help="Linear LR warmup epochs")
-    parser.add_argument("--grad-accum", type=int, default=2,
-                        help="Gradient accumulation steps (effective_batch = batch_size * grad_accum)")
+    parser.add_argument(
+        "--ema-decay", type=float, default=0.999, help="Initial EMA decay for teacher"
+    )
+    parser.add_argument(
+        "--ema-end",
+        type=float,
+        default=0.9999,
+        help="Final EMA decay for teacher (cosine schedule)",
+    )
+    parser.add_argument(
+        "--top-k-layers",
+        type=int,
+        default=2,
+        help="Average top-K transformer layers for teacher targets",
+    )
+    parser.add_argument("--warmup-epochs", type=int, default=3, help="Linear LR warmup epochs")
+    parser.add_argument(
+        "--grad-accum",
+        type=int,
+        default=2,
+        help="Gradient accumulation steps (effective_batch = batch_size * grad_accum)",
+    )
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--num-workers", type=int, default=4)
-    parser.add_argument("--image-backbone", choices=["simple", "zoobot", "dinov2"], default="simple")
+    parser.add_argument(
+        "--image-backbone", choices=["simple", "zoobot", "dinov2"], default="simple"
+    )
     parser.add_argument("--resume-from", default=None, help="Path to checkpoint.pt to resume")
     args = parser.parse_args()
 
@@ -190,13 +212,13 @@ def main():
 
     # Optimizer: only student and prediction MLP parameters (NOT teacher)
     trainable_params = [
-        p for n, p in model.named_parameters()
-        if "teacher_encoder" not in n and p.requires_grad
+        p for n, p in model.named_parameters() if "teacher_encoder" not in n and p.requires_grad
     ]
     optimizer = torch.optim.AdamW(trainable_params, lr=args.lr, weight_decay=1e-2)
 
     # LR schedule: linear warmup + cosine decay
     warmup_epochs = args.warmup_epochs
+
     def lr_lambda(epoch):
         if epoch < warmup_epochs:
             return (epoch + 1) / warmup_epochs
@@ -219,17 +241,17 @@ def main():
         print(f"  Resumed from epoch {start_epoch}")
 
     # Count parameters
-    n_student = sum(p.numel() for n, p in model.named_parameters()
-                    if "teacher_encoder" not in n)
-    n_teacher = sum(p.numel() for n, p in model.named_parameters()
-                    if "teacher_encoder" in n)
+    n_student = sum(p.numel() for n, p in model.named_parameters() if "teacher_encoder" not in n)
+    n_teacher = sum(p.numel() for n, p in model.named_parameters() if "teacher_encoder" in n)
     n_total = sum(p.numel() for p in model.parameters())
     effective_batch = args.batch_size * args.grad_accum
 
     print(f"\n{'=' * 60}")
     print("AstroDistill Training (Data2Vec-style self-distillation)")
     print(f"  Parameters: {n_total:,} total ({n_student:,} student + {n_teacher:,} teacher)")
-    print(f"  Batch size: {args.batch_size} × {args.grad_accum} accum = {effective_batch} effective")
+    print(
+        f"  Batch size: {args.batch_size} × {args.grad_accum} accum = {effective_batch} effective"
+    )
     print(f"  Encoder: {args.n_layers} layers, d_model={args.d_model}")
     print(f"  Mask ratio: {args.mask_ratio}")
     print(f"  Embed dim: {args.embed_dim}")
@@ -244,8 +266,14 @@ def main():
     for epoch in range(start_epoch, args.epochs):
         t0 = time.time()
         train_m = train_one_epoch(
-            model, train_loader, optimizer, epoch, args.epochs,
-            args.device, args.ema_decay, args.ema_end,
+            model,
+            train_loader,
+            optimizer,
+            epoch,
+            args.epochs,
+            args.device,
+            args.ema_decay,
+            args.ema_end,
             grad_accum_steps=args.grad_accum,
         )
         scheduler.step()
@@ -278,7 +306,7 @@ def main():
         torch.save(ckpt, os.path.join(args.output_dir, "checkpoint.pt"))
 
         print(
-            f"  [{epoch+1:3d}/{args.epochs}] "
+            f"  [{epoch + 1:3d}/{args.epochs}] "
             f"loss={train_m['loss']:.4f} "
             f"ema={train_m['ema_decay']:.4f} "
             f"lr={scheduler.get_last_lr()[0]:.2e} "
@@ -289,7 +317,8 @@ def main():
     print("\nLoading best model for embedding extraction...")
     best_state = torch.load(
         os.path.join(args.output_dir, "best_model.pt"),
-        weights_only=True, map_location=args.device,
+        weights_only=True,
+        map_location=args.device,
     )
     model.load_state_dict(best_state)
 

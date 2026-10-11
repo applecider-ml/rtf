@@ -184,7 +184,15 @@ MODEL_REGISTRY = [
 # ======================================================================
 
 
-def load_rtf(model_path, device, embed_dim=128, backbone="simple", d_model=256, in_channels=37, use_images=True):
+def load_rtf(
+    model_path,
+    device,
+    embed_dim=128,
+    backbone="simple",
+    d_model=256,
+    in_channels=37,
+    use_images=True,
+):
     """Load the RTF baseline (LightCurveCompressor)."""
     from model import LightCurveCompressor
 
@@ -213,7 +221,15 @@ def load_rtf(model_path, device, embed_dim=128, backbone="simple", d_model=256, 
     return model
 
 
-def load_perceiver(model_path, device, embed_dim=128, backbone="simple", d_model=256, in_channels=37, use_images=True):
+def load_perceiver(
+    model_path,
+    device,
+    embed_dim=128,
+    backbone="simple",
+    d_model=256,
+    in_channels=37,
+    use_images=True,
+):
     """Load a Perceiver IO model with given embed_dim."""
     from perceiver_model import PerceiverAutoencoder
 
@@ -236,7 +252,15 @@ def load_perceiver(model_path, device, embed_dim=128, backbone="simple", d_model
     return model
 
 
-def load_astrodistill(model_path, device, embed_dim=128, backbone="simple", d_model=256, in_channels=37, use_images=True):
+def load_astrodistill(
+    model_path,
+    device,
+    embed_dim=128,
+    backbone="simple",
+    d_model=256,
+    in_channels=37,
+    use_images=True,
+):
     """Load an AstroDistill model with given embed_dim and backbone."""
     from astrodistill_model import AstroDistill
 
@@ -369,9 +393,7 @@ def compute_metrics(embeddings, labels, encoder_name):
     if n_classes >= 2:
         n_sil = min(len(X), 10000)
         idx = np.random.choice(len(X), n_sil, replace=False)
-        results["silhouette"] = float(
-            silhouette_score(X[idx], y[idx], metric="cosine")
-        )
+        results["silhouette"] = float(silhouette_score(X[idx], y[idx], metric="cosine"))
     else:
         results["silhouette"] = float("nan")
 
@@ -379,7 +401,8 @@ def compute_metrics(embeddings, labels, encoder_name):
     n_folds = min(5, min(np.bincount(y)))
     if n_classes >= 2 and n_folds >= 2:
         knn = KNeighborsClassifier(
-            n_neighbors=min(10, len(X) // 5), metric="cosine",
+            n_neighbors=min(10, len(X) // 5),
+            metric="cosine",
         )
         skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=42)
         knn_scores = cross_val_score(knn, X, y, cv=skf, scoring="accuracy")
@@ -394,7 +417,10 @@ def compute_metrics(embeddings, labels, encoder_name):
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
         clf = LogisticRegression(
-            max_iter=2000, multi_class="multinomial", C=1.0, n_jobs=-1,
+            max_iter=2000,
+            multi_class="multinomial",
+            C=1.0,
+            n_jobs=-1,
         )
         skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=42)
         lp_scores = cross_val_score(clf, X_scaled, y, cv=skf, scoring="accuracy")
@@ -519,7 +545,11 @@ def compute_per_class_f1(embeddings, labels, encoder_name):
     y_pred = cross_val_predict(clf, X_scaled, y, cv=skf)
 
     report = classification_report(
-        y, y_pred, target_names=le.classes_, output_dict=True, zero_division=0,
+        y,
+        y_pred,
+        target_names=le.classes_,
+        output_dict=True,
+        zero_division=0,
     )
     return report
 
@@ -554,8 +584,9 @@ def plot_comparison_bar(results_list, output_dir):
         ax.set_xlim(0, max(max(vals) * 1.15, 0.01))
         # Annotate bars
         for bar, v in zip(bars, vals):
-            ax.text(v + 0.002, bar.get_y() + bar.get_height() / 2,
-                    f"{v:.4f}", va="center", fontsize=7)
+            ax.text(
+                v + 0.002, bar.get_y() + bar.get_height() / 2, f"{v:.4f}", va="center", fontsize=7
+            )
 
     fig.tight_layout(rect=[0, 0, 1, 0.95])
     path = os.path.join(output_dir, "model_comparison_bars.png")
@@ -588,11 +619,21 @@ def plot_confusion_matrices(report_a, report_b, name_a, name_b, output_dir):
 
     # Annotate
     for bar in bars1:
-        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.01,
-                f"{bar.get_height():.2f}", ha="center", fontsize=7)
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 0.01,
+            f"{bar.get_height():.2f}",
+            ha="center",
+            fontsize=7,
+        )
     for bar in bars2:
-        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.01,
-                f"{bar.get_height():.2f}", ha="center", fontsize=7)
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 0.01,
+            f"{bar.get_height():.2f}",
+            ha="center",
+            fontsize=7,
+        )
 
     fig.tight_layout()
     path = os.path.join(output_dir, "per_class_f1_comparison.png")
@@ -605,9 +646,11 @@ def plot_umap_top4(encoder_data, output_dir):
     """UMAP 2x2 grid for the top 4 models."""
     try:
         from umap import UMAP  # noqa: F401
+
         method = "UMAP"
     except ImportError:
         from sklearn.manifold import TSNE
+
         method = "t-SNE"
 
     n = min(4, len(encoder_data))
@@ -625,8 +668,9 @@ def plot_umap_top4(encoder_data, output_dir):
     fig, axes = plt.subplots(rows, cols, figsize=(14, 12))
     axes = np.array(axes).flatten()
 
-    fig.suptitle(f"Embedding Space ({method}) — Top 4 Models",
-                 fontsize=16, fontweight="bold", y=1.01)
+    fig.suptitle(
+        f"Embedding Space ({method}) — Top 4 Models", fontsize=16, fontweight="bold", y=1.01
+    )
 
     for i, (name, emb, labels) in enumerate(encoder_data[:n]):
         ax = axes[i]
@@ -639,6 +683,7 @@ def plot_umap_top4(encoder_data, output_dir):
 
         if method == "UMAP":
             from umap import UMAP as UMAPClass
+
             reducer = UMAPClass(n_components=2, n_neighbors=30, min_dist=0.3, random_state=42)
         else:
             reducer = TSNE(n_components=2, perplexity=30, random_state=42)
@@ -649,8 +694,7 @@ def plot_umap_top4(encoder_data, output_dir):
             mask = labels_sub == cls
             if mask.sum() == 0:
                 continue
-            ax.scatter(coords[mask, 0], coords[mask, 1],
-                       c=[colormap[cls]], s=8, alpha=0.6)
+            ax.scatter(coords[mask, 0], coords[mask, 1], c=[colormap[cls]], s=8, alpha=0.6)
 
         ax.set_title(name, fontsize=12, fontweight="bold")
         ax.tick_params(labelsize=7)
@@ -661,12 +705,18 @@ def plot_umap_top4(encoder_data, output_dir):
 
     # Shared legend
     legend_elements = [
-        Line2D([0], [0], marker="o", color="w", markerfacecolor=colormap[cls],
-               markersize=8, label=cls)
+        Line2D(
+            [0], [0], marker="o", color="w", markerfacecolor=colormap[cls], markersize=8, label=cls
+        )
         for cls in unique
     ]
-    fig.legend(handles=legend_elements, loc="lower center",
-               ncol=min(len(unique), 8), fontsize=9, bbox_to_anchor=(0.5, -0.02))
+    fig.legend(
+        handles=legend_elements,
+        loc="lower center",
+        ncol=min(len(unique), 8),
+        fontsize=9,
+        bbox_to_anchor=(0.5, -0.02),
+    )
 
     fig.tight_layout(rect=[0, 0.03, 1, 0.98])
     path = os.path.join(output_dir, "umap_top4.png")
@@ -684,14 +734,16 @@ def main():
     parser = argparse.ArgumentParser(
         description="Compare all 13 encoder variants (Phase 1 + Phase 2)"
     )
-    parser.add_argument("--fritz-dir", required=True,
-                        help="Path to Fritz sources NPZ dir")
-    parser.add_argument("--scores", required=True,
-                        help="Path to anomaly_scores.csv with classifications")
-    parser.add_argument("--runs-dir", required=True,
-                        help="Root runs directory containing all model subdirs")
-    parser.add_argument("--output-dir", default="runs/comparison_v2",
-                        help="Output directory for results")
+    parser.add_argument("--fritz-dir", required=True, help="Path to Fritz sources NPZ dir")
+    parser.add_argument(
+        "--scores", required=True, help="Path to anomaly_scores.csv with classifications"
+    )
+    parser.add_argument(
+        "--runs-dir", required=True, help="Root runs directory containing all model subdirs"
+    )
+    parser.add_argument(
+        "--output-dir", default="runs/comparison_v2", help="Output directory for results"
+    )
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
 
@@ -722,19 +774,19 @@ def main():
     # --- Extract embeddings and compute metrics for each ---
     all_results = []
     all_emb_data = {}  # name -> emb_data dict
-    all_reports = {}   # name -> per-class F1 report
+    all_reports = {}  # name -> per-class F1 report
 
     for i, spec in enumerate(available):
         name = spec["name"]
-        print(f"\n[{i+1}/{len(available)}] {name}")
-        print(f"  arch={spec['arch']}, embed_dim={spec['embed_dim']}, "
-              f"backbone={spec['backbone']}")
+        print(f"\n[{i + 1}/{len(available)}] {name}")
+        print(f"  arch={spec['arch']}, embed_dim={spec['embed_dim']}, backbone={spec['backbone']}")
 
         # Load
         loader = ARCH_LOADERS[spec["arch"]]
         t0 = time.time()
         model = loader(
-            spec["model_path"], args.device,
+            spec["model_path"],
+            args.device,
             embed_dim=spec["embed_dim"],
             backbone=spec["backbone"],
             d_model=spec.get("d_model", 256),
@@ -747,8 +799,7 @@ def main():
         # Extract embeddings
         t0 = time.time()
         emb_data = extract_embeddings(
-            model, args.fritz_dir, args.scores, args.device,
-            in_channels=spec.get("in_channels", 37)
+            model, args.fritz_dir, args.scores, args.device, in_channels=spec.get("in_channels", 37)
         )
         emb = emb_data["embeddings"]
         print(f"  Extracted: {emb.shape} in {time.time() - t0:.1f}s")
@@ -768,15 +819,19 @@ def main():
 
         print(f"    Silhouette:    {metrics['silhouette']:.4f}")
         print(f"    k-NN (k=10):   {metrics['knn_acc']:.4f} ± {metrics['knn_std']:.4f}")
-        print(f"    Linear Probe:  {metrics['linear_probe_acc']:.4f} ± "
-              f"{metrics['linear_probe_std']:.4f}")
+        print(
+            f"    Linear Probe:  {metrics['linear_probe_acc']:.4f} ± "
+            f"{metrics['linear_probe_std']:.4f}"
+        )
 
         # Isolation Forest anomaly detection precision
         if_metrics = compute_isolation_forest_precision(emb, emb_data["labels_fine"], name)
         metrics.update(if_metrics)
         if not np.isnan(if_metrics["if_precision_at_k"]):
-            print(f"    IF Prec@{if_metrics['k']}:  {if_metrics['if_precision_at_k']:.4f} "
-                  f"(rare classes: {if_metrics.get('rare_classes', [])})")
+            print(
+                f"    IF Prec@{if_metrics['k']}:  {if_metrics['if_precision_at_k']:.4f} "
+                f"(rare classes: {if_metrics.get('rare_classes', [])})"
+            )
 
         # Per-class F1
         report = compute_per_class_f1(emb, emb_data["labels_fine"], name)
@@ -844,10 +899,11 @@ def main():
             sign = "+" if delta > 0 else ""
             print(f"{label:<25} {rv:>15.4f} {wv:>25.4f} {sign}{delta:>9.4f}")
 
-        print(f"{'Parameters':<25} {rtf_result['n_params']:>15,} "
-              f"{winner['n_params']:>25,}")
-        print(f"{'Embed Dim':<25} {rtf_result.get('embed_dim', 128):>15} "
-              f"{winner.get('embed_dim', '?'):>25}")
+        print(f"{'Parameters':<25} {rtf_result['n_params']:>15,} {winner['n_params']:>25,}")
+        print(
+            f"{'Embed Dim':<25} {rtf_result.get('embed_dim', 128):>15} "
+            f"{winner.get('embed_dim', '?'):>25}"
+        )
         print(f"{'Backbone':<25} {'simple':>15} {winner.get('backbone', '?'):>25}")
         print(f"{'=' * 70}")
 
@@ -857,8 +913,11 @@ def main():
         if rtf_name in all_reports and winner_name in all_reports:
             print("\nGenerating per-class F1 comparison...")
             plot_confusion_matrices(
-                all_reports[rtf_name], all_reports[winner_name],
-                rtf_name, winner_name, args.output_dir,
+                all_reports[rtf_name],
+                all_reports[winner_name],
+                rtf_name,
+                winner_name,
+                args.output_dir,
             )
 
     # --- UMAP for top 4 ---
@@ -876,8 +935,10 @@ def main():
     if rtf_result and winner["encoder"] != "RTF 128-D":
         winner_name = winner["encoder"]
         if winner_name in all_emb_data and "RTF 128-D" in all_emb_data:
-            print(f"\nRunning paired bootstrap significance test "
-                  f"({winner_name} vs RTF 128-D, n=1000)...")
+            print(
+                f"\nRunning paired bootstrap significance test "
+                f"({winner_name} vs RTF 128-D, n=1000)..."
+            )
             sig = bootstrap_significance(
                 all_emb_data[winner_name]["embeddings"],
                 all_emb_data["RTF 128-D"]["embeddings"],
@@ -917,17 +978,19 @@ def main():
 
     # Add significance test result if available
     if rtf_result and winner["encoder"] != "RTF 128-D" and sig:
-        md_lines.extend([
-            "",
-            "## Statistical Significance",
-            "",
-            f"**{winner['encoder']}** vs **RTF 128-D** (paired bootstrap, n=1000):",
-            "",
-            f"- Mean Δ (linear probe): `{sig['mean_delta']:+.4f}`",
-            f"- 95% CI: `[{sig['ci_95_lo']:+.4f}, {sig['ci_95_hi']:+.4f}]`",
-            f"- p-value: `{sig['p_value']:.4f}`",
-            f"- **Statistically significant**: {'YES ✓' if sig['significant'] else 'NO ✗'}",
-        ])
+        md_lines.extend(
+            [
+                "",
+                "## Statistical Significance",
+                "",
+                f"**{winner['encoder']}** vs **RTF 128-D** (paired bootstrap, n=1000):",
+                "",
+                f"- Mean Δ (linear probe): `{sig['mean_delta']:+.4f}`",
+                f"- 95% CI: `[{sig['ci_95_lo']:+.4f}, {sig['ci_95_hi']:+.4f}]`",
+                f"- p-value: `{sig['p_value']:.4f}`",
+                f"- **Statistically significant**: {'YES ✓' if sig['significant'] else 'NO ✗'}",
+            ]
+        )
 
     md_lines.extend(["", ""])
     md_path = os.path.join(args.output_dir, "comparison_summary.md")
