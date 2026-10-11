@@ -23,7 +23,6 @@ from pathlib import Path
 
 import numpy as np
 
-
 # Model name → coarse label mapping
 MODEL_TO_LABEL = {
     "Bazin": 0,  # SN Ia-like
@@ -219,7 +218,7 @@ def main():
             if result is None:
                 continue
 
-            x, image = result
+            x, _image = result
             oid = f"SYN_{model_name}_{n_generated:05d}"
             out_path = os.path.join(args.output_dir, "train", f"{oid}.npz")
             np.savez_compressed(

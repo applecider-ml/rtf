@@ -112,8 +112,8 @@ def compute_physical_metrics(model, loader, mean, std, device):
         valid = ~pad_mask.cpu()
 
         # Denormalize both
-        dt_orig, mag_orig, magerr_orig, band_orig = denormalize_batch(x_orig, mean, std)
-        dt_recon, mag_recon, magerr_recon, band_recon = denormalize_batch(
+        dt_orig, mag_orig, _magerr_orig, band_orig = denormalize_batch(x_orig, mean, std)
+        dt_recon, mag_recon, _magerr_recon, band_recon = denormalize_batch(
             x_recon, mean, std
         )
 
@@ -211,7 +211,7 @@ def plot_reconstructed_lightcurves(
             dt_o, mag_o, band_o = dt_o[0][v], mag_o[0][v], band_o[0][v]
             dt_r, mag_r, band_r = dt_r[0][v], mag_r[0][v], band_r[0][v]
 
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4), sharey=True)
+            _fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4), sharey=True)
 
             # Original
             for b_id in range(3):

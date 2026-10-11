@@ -6,5 +6,46 @@ build/
 .pytest_cache/
 runs/
 analysis/
+results/
+
+# Data / derived outputs — do not redistribute
 *.pt
 *.npz
+*.csv
+fritz_sources/
+lightcurves/
+plots/color50/
+
+# Internal presentations
+*.pptx
+
+# Internal reports and scratch
+triage_report.html
+triage_report.md
+llm_triage_results.json
+script.md
+ztf_ml_script.md
+ztf_ml_script_v3.md
+pytest_results.txt
+scratch_embed.py
+inspect_ppt.py
+read_pptx.py
+
+# Notebooks (contain internal outputs/tokens)
+*.ipynb
+
+# One-off root-level scripts
+slurm_train_meta_delta.sh
+run_delta_verification.sh
+verify_delta_ground_truth.py
+generate_plots.py
+
+# Paper: exclude LaTeX source and drafts, keep only figures/
+paper/*.tex
+paper/*.sty
+paper/*.pdf
+paper/*.md
+paper/*.pptx
+paper/generate_figure1.py
+paper/figures/rtf_architecture.html
+paper/figures/render_diagram.py

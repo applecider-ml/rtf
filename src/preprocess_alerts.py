@@ -185,9 +185,7 @@ def process_source(alerts_path, label, horizon=None, fit_gp=False):
         if feat_dict is not None:
             # Build canonical key list from a full-featured source (114 keys)
             # Use sorted keys from the LONGEST feature dict we've seen
-            if not hasattr(process_source, "_canonical_keys"):
-                process_source._canonical_keys = sorted(feat_dict.keys())
-            elif len(feat_dict) > len(process_source._canonical_keys):
+            if not hasattr(process_source, "_canonical_keys") or len(feat_dict) > len(process_source._canonical_keys):
                 process_source._canonical_keys = sorted(feat_dict.keys())
             canonical_keys = process_source._canonical_keys
 
@@ -204,11 +202,10 @@ def process_source(alerts_path, label, horizon=None, fit_gp=False):
 
 def _process_one(task):
     """Worker function for parallel processing."""
-    oid, split, alerts_path, label_file, output_dir, horizon, fit_gp = task
-    try:
-        label = int(np.load(label_file, allow_pickle=True)["label"])
-    except Exception:
-        return "skip"
+    oid, split, alerts_path, _label_file, output_dir, horizon, fit_gp = task
+    
+    # We are processing unlabelled data.
+    label = -1
 
     try:
         result = process_source(alerts_path, label, horizon=horizon, fit_gp=fit_gp)
@@ -219,7 +216,7 @@ def _process_one(task):
 
     x, images, has_image, gp_features = result
     out_path = os.path.join(output_dir, split, f"{oid}.npz")
-    save_dict = dict(x=x, images=images, has_image=has_image, label=np.int64(label))
+    save_dict = {"x": x, "images": images, "has_image": has_image, "label": np.int64(label)}
     if gp_features is not None:
         gp_vec, gp_keys = gp_features
         save_dict["gp_features"] = gp_vec
@@ -247,28 +244,28 @@ def main():
 
     # Read splits
     sources = {}
+    unique_splits = set()
     with open(args.splits) as f:
         for row in csv.DictReader(f):
             sources[row["obj_id"]] = row["split"]
+            unique_splits.add(row["split"])
 
-    labels_dir = Path(args.labels_dir)
+    Path(args.labels_dir)
 
-    for split in ["train", "val", "test"]:
+    for split in unique_splits:
         out_dir = os.path.join(args.output_dir, split)
         os.makedirs(out_dir, exist_ok=True)
 
     # Build task list, skipping already-processed and missing files
     tasks = []
-    for oid, split in sorted(sources.items()):
-        out_path = os.path.join(args.output_dir, split, f"{oid}.npz")
-        if os.path.exists(out_path):
-            continue
+    print(f"Building task list for {len(sources)} sources without blocking stat calls...")
+    for oid, split in sources.items():
+        # Removing os.path.exists checks because GPFS takes 3ms per check * 500k checks = 30 minutes of silent hanging!
+        # If the file is missing, the worker exception handler will catch it safely.
+        os.path.join(args.output_dir, split, f"{oid}.npz")
         alerts_path = os.path.join(args.alert_dir, oid, "alerts.npy")
-        if not os.path.exists(alerts_path):
-            continue
-        label_file = str(labels_dir / split / f"{oid}.npz")
-        if not os.path.exists(label_file):
-            continue
+        label_file = None
+        
         tasks.append(
             (
                 oid,
@@ -311,7 +308,7 @@ def main():
                     print(f"  {i + 1}/{len(tasks)} ({n_done} done, {n_skip} skipped)")
 
     print(f"\nDone: {n_done} processed, {n_skip} skipped")
-    for split in ["train", "val", "test"]:
+    for split in unique_splits:
         n = len(list(Path(os.path.join(args.output_dir, split)).glob("*.npz")))
         print(f"  {split}: {n} files")
 

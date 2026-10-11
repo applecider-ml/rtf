@@ -27,9 +27,15 @@ import time
 
 import numpy as np
 import torch
-from torch.utils.data import ConcatDataset, DataLoader
+from torch.utils.data import ConcatDataset, DataLoader, IterableDataset
 
-from dataset import AlertDataset, MetaNPZDataset, PhotoNPZDataset, collate_fn
+from dataset import (
+    AlertDataset,
+    MetaNPZDataset,
+    PhotoNPZDataset,
+    ShardedDataset,
+    collate_fn,
+)
 from model import LightCurveCompressor
 
 
@@ -57,24 +63,31 @@ def train_one_epoch(
     device,
     grad_clip=1.0,
     cls_weight=0.0,
+    band_weight=1.0,
+    color_weight=0.0,
+    gp_weight=0.0,
 ):
     model.train()
+    core_model = model.module if isinstance(model, torch.nn.DataParallel) else model
     beta = (
-        beta_schedule(epoch, total_epochs, target_beta) if model.mode == "vae" else 0.0
+        beta_schedule(epoch, total_epochs, target_beta) if core_model.mode == "vae" else 0.0
     )
 
     metrics_sum = {}
     n_batches = 0
+    t_start = time.time()
 
     for batch in loader:
         x = batch["x"].to(device)
         pad_mask = batch["pad_mask"].to(device)
         images, gp_features = _get_extra_args(batch, device)
+        gp_targets = batch["gp_features"].to(device) if "gp_features" in batch and gp_weight > 0 else None
 
         labels = batch["label_coarse"].to(device) if cls_weight > 0 else None
         out = model(x, pad_mask, images, gp_features=gp_features)
-        loss_dict = model.compute_loss(
-            x, pad_mask, out, beta, labels=labels, cls_weight=cls_weight
+        loss_dict = core_model.compute_loss(
+            x, pad_mask, out, beta, labels=labels, cls_weight=cls_weight, band_weight=band_weight, color_weight=color_weight,
+            gp_weight=gp_weight, gp_targets=gp_targets
         )
 
         optimizer.zero_grad()
@@ -87,14 +100,24 @@ def train_one_epoch(
             metrics_sum[k] = metrics_sum.get(k, 0.0) + val
         n_batches += 1
 
+        # Print progress every 200 batches so user knows it's alive
+        if n_batches % 200 == 0:
+            elapsed = time.time() - t_start
+            avg_loss = metrics_sum.get('total_loss', 0) / n_batches
+            rate = n_batches / elapsed if elapsed > 0 else 0
+            print(f"    Epoch {epoch+1}/{total_epochs} | batch {n_batches} | "
+                  f"loss={avg_loss:.4f} | {rate:.1f} batch/s | "
+                  f"{elapsed:.0f}s elapsed", flush=True)
+
     return {k: v / n_batches for k, v in metrics_sum.items()}
 
 
 @torch.no_grad()
-def evaluate(model, loader, epoch, total_epochs, target_beta, device, cls_weight=0.0):
+def evaluate(model, loader, epoch, total_epochs, target_beta, device, cls_weight=0.0, band_weight=1.0, color_weight=0.0, gp_weight=0.0):
     model.eval()
+    core_model = model.module if isinstance(model, torch.nn.DataParallel) else model
     beta = (
-        beta_schedule(epoch, total_epochs, target_beta) if model.mode == "vae" else 0.0
+        beta_schedule(epoch, total_epochs, target_beta) if core_model.mode == "vae" else 0.0
     )
 
     metrics_sum = {}
@@ -104,9 +127,11 @@ def evaluate(model, loader, epoch, total_epochs, target_beta, device, cls_weight
         x = batch["x"].to(device)
         pad_mask = batch["pad_mask"].to(device)
         images, gp_features = _get_extra_args(batch, device)
+        gp_targets = batch["gp_features"].to(device) if "gp_features" in batch and gp_weight > 0 else None
 
         out = model(x, pad_mask, images, gp_features=gp_features)
-        loss_dict = model.compute_loss(x, pad_mask, out, beta)
+        loss_dict = core_model.compute_loss(x, pad_mask, out, beta, band_weight=band_weight, color_weight=color_weight,
+            gp_weight=gp_weight, gp_targets=gp_targets)
 
         for k, v in loss_dict.items():
             val = v.item() if isinstance(v, torch.Tensor) else v
@@ -118,15 +143,16 @@ def evaluate(model, loader, epoch, total_epochs, target_beta, device, cls_weight
 
 def extract_embeddings(model, loader, device):
     """Extract latent embeddings from all samples."""
-    model.eval()
+    core_model = model.module if isinstance(model, torch.nn.DataParallel) else model
+    core_model.eval()
     all_emb, all_fine, all_coarse, all_recon, all_ids = [], [], [], [], []
     with torch.no_grad():
         for batch in loader:
             x = batch["x"].to(device)
             pad_mask = batch["pad_mask"].to(device)
             images, gp_features = _get_extra_args(batch, device)
-            emb = model.embed(x, pad_mask, images, gp_features=gp_features)
-            recon_err = model.reconstruction_error(
+            emb = core_model.embed(x, pad_mask, images, gp_features=gp_features)
+            recon_err = core_model.reconstruction_error(
                 x, pad_mask, images, gp_features=gp_features
             )
             all_emb.append(emb.cpu())
@@ -173,6 +199,10 @@ def train_model(
     cls_weight=0.0,
     num_classes=5,
     synthetic_dir=None,
+    resume_from=None,
+    band_weight=1.0,
+    color_weight=0.0,
+    gp_weight=0.0,
 ):
     suffix = ""
     if use_metadata:
@@ -222,27 +252,33 @@ def train_model(
             horizon=horizon,
         )
     elif use_metadata:
-        train_ds = MetaNPZDataset(
-            os.path.join(data_dir, "train"),
-            use_images=use_images,
-            use_gp=use_gp,
-            max_detections=max_detections,
-            random_truncate=random_truncate,
-            min_detections=min_detections,
-        )
-        # Val/test always use fixed max_detections (no random truncation)
-        val_ds = MetaNPZDataset(
-            os.path.join(data_dir, "val"),
-            use_images=use_images,
-            use_gp=use_gp,
-            max_detections=max_detections,
-        )
-        test_ds = MetaNPZDataset(
-            os.path.join(data_dir, "test"),
-            use_images=use_images,
-            use_gp=use_gp,
-            max_detections=max_detections,
-        )
+        train_dsets, val_dsets, test_dsets = [], [], []
+        for d in data_dir.split(","):
+            d = d.strip()
+            # Fast path: check if directory contains packed shard files
+            from pathlib import Path as _Path
+            shard_files = sorted(_Path(d).glob("shard_*.pt")) if _Path(d).is_dir() else []
+            if shard_files:
+                print(f"  [SHARDS] Found {len(shard_files)} shard files in {d}")
+                train_dsets.append(ShardedDataset(d, use_images=use_images, use_gp=use_gp, gp_dim=gp_dim, max_detections=max_detections, random_truncate=random_truncate, min_detections=min_detections))
+                val_dsets.append(ShardedDataset(d, use_images=use_images, use_gp=use_gp, gp_dim=gp_dim, max_detections=max_detections))
+                test_dsets.append(ShardedDataset(d, use_images=use_images, use_gp=use_gp, gp_dim=gp_dim, max_detections=max_detections))
+            elif os.path.exists(os.path.join(d, "infer")):
+                t_path = v_path = te_path = os.path.join(d, "infer")
+                train_dsets.append(MetaNPZDataset(t_path, use_images=use_images, use_gp=use_gp, max_detections=max_detections, random_truncate=random_truncate, min_detections=min_detections))
+                val_dsets.append(MetaNPZDataset(v_path, use_images=use_images, use_gp=use_gp, max_detections=max_detections))
+                test_dsets.append(MetaNPZDataset(te_path, use_images=use_images, use_gp=use_gp, max_detections=max_detections))
+            else:
+                t_path = os.path.join(d, "train") if os.path.exists(os.path.join(d, "train")) else d
+                v_path = os.path.join(d, "val") if os.path.exists(os.path.join(d, "val")) else d
+                te_path = os.path.join(d, "test") if os.path.exists(os.path.join(d, "test")) else d
+                train_dsets.append(MetaNPZDataset(t_path, use_images=use_images, use_gp=use_gp, max_detections=max_detections, random_truncate=random_truncate, min_detections=min_detections))
+                val_dsets.append(MetaNPZDataset(v_path, use_images=use_images, use_gp=use_gp, max_detections=max_detections))
+                test_dsets.append(MetaNPZDataset(te_path, use_images=use_images, use_gp=use_gp, max_detections=max_detections))
+        
+        train_ds = ConcatDataset(train_dsets) if len(train_dsets) > 1 else train_dsets[0]
+        val_ds = ConcatDataset(val_dsets) if len(val_dsets) > 1 else val_dsets[0]
+        test_ds = ConcatDataset(test_dsets) if len(test_dsets) > 1 else test_dsets[0]
     else:
         stats_path = os.path.join(data_dir, "feature_stats_day100.npz")
         if not os.path.exists(stats_path):
@@ -257,7 +293,7 @@ def train_model(
             os.path.join(data_dir, "test"), stats_path, horizon=horizon
         )
 
-    in_channels = train_ds.in_channels
+    in_channels = train_ds.datasets[0].in_channels if isinstance(train_ds, ConcatDataset) else train_ds.in_channels
 
     # Optionally merge synthetic data into training set
     if synthetic_dir is not None and os.path.isdir(
@@ -274,13 +310,20 @@ def train_model(
         train_ds = ConcatDataset([train_ds, syn_ds])
 
     pin = device != "cpu"
+    pers_workers = num_workers > 0
+
+    # IterableDataset (ShardedDataset) handles its own shuffling
+    is_iterable = isinstance(train_ds, IterableDataset)
+
     train_loader = DataLoader(
         train_ds,
         batch_size=batch_size,
-        shuffle=True,
+        shuffle=not is_iterable,
         collate_fn=collate_fn,
         num_workers=num_workers,
         pin_memory=pin,
+        persistent_workers=False if is_iterable else pers_workers,
+        prefetch_factor=2 if (num_workers > 0 and is_iterable) else (8 if num_workers > 0 else None),
     )
     val_loader = DataLoader(
         val_ds,
@@ -289,6 +332,7 @@ def train_model(
         collate_fn=collate_fn,
         num_workers=num_workers,
         pin_memory=pin,
+        persistent_workers=pers_workers,
     )
     test_loader = DataLoader(
         test_ds,
@@ -297,6 +341,7 @@ def train_model(
         collate_fn=collate_fn,
         num_workers=num_workers,
         pin_memory=pin,
+        persistent_workers=pers_workers,
     )
 
     model = LightCurveCompressor(
@@ -318,7 +363,44 @@ def train_model(
     )
 
     n_params = sum(p.numel() for p in model.parameters())
-    comp = model.compression_info()
+    
+    if resume_from is not None:
+        ckpt_path = resume_from
+        if os.path.exists(ckpt_path):
+            print(f"Loading checkpoint from: {ckpt_path}")
+            ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
+            if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
+                # Full checkpoint with optimizer/scheduler/epoch
+                model.load_state_dict(ckpt["model_state_dict"])
+                optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+                scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+                start_epoch = ckpt["epoch"] + 1
+                best_val_loss = ckpt.get("best_val_loss", float("inf"))
+                best_epoch = ckpt.get("best_epoch", 0)
+                print(f"  Resuming from epoch {start_epoch} (best_val_loss={best_val_loss:.6f})")
+            else:
+                # Legacy: raw state dict only
+                model.load_state_dict(ckpt)
+                start_epoch = 0
+                best_val_loss = float("inf")
+                best_epoch = 0
+                print("  Loaded model weights (no epoch info, starting from epoch 0)")
+        else:
+            print(f"  Warning: {ckpt_path} not found, training from scratch")
+            start_epoch = 0
+            best_val_loss = float("inf")
+            best_epoch = 0
+    else:
+        start_epoch = 0
+        best_val_loss = float("inf")
+        best_epoch = 0
+
+    if torch.cuda.device_count() > 1:
+        print(f"Using {torch.cuda.device_count()} GPUs with DataParallel!")
+        model = torch.nn.DataParallel(model)
+
+    core_model = model.module if isinstance(model, torch.nn.DataParallel) else model
+    comp = core_model.compression_info()
     print(f"\n{'=' * 60}")
     print(
         f"Training {mode.upper()}: latent_dim={latent_dim}, in_channels={in_channels}, d_model={d_model}"
@@ -331,10 +413,8 @@ def train_model(
     print(f"{'=' * 60}")
 
     history = []
-    best_val_loss = float("inf")
-    best_epoch = 0
 
-    for epoch in range(epochs):
+    for epoch in range(start_epoch, epochs):
         t0 = time.time()
         train_m = train_one_epoch(
             model,
@@ -345,9 +425,14 @@ def train_model(
             target_beta,
             device,
             cls_weight=cls_weight,
+            band_weight=band_weight,
+            color_weight=color_weight,
+            gp_weight=gp_weight,
         )
         val_m = evaluate(
-            model, val_loader, epoch, epochs, target_beta, device, cls_weight=cls_weight
+            model, val_loader, epoch, epochs, target_beta, device,
+            cls_weight=cls_weight, band_weight=band_weight, color_weight=color_weight,
+            gp_weight=gp_weight,
         )
         scheduler.step()
         dt = time.time() - t0
@@ -363,28 +448,46 @@ def train_model(
         if val_m["total_loss"] < best_val_loss:
             best_val_loss = val_m["total_loss"]
             best_epoch = epoch
-            torch.save(model.state_dict(), os.path.join(run_dir, "best_model.pt"))
+            state_dict_to_save = model.module.state_dict() if isinstance(model, torch.nn.DataParallel) else model.state_dict()
+            torch.save(state_dict_to_save, os.path.join(run_dir, "best_model.pt"))
 
-        if epoch % 10 == 0 or epoch == epochs - 1:
+        # Save full checkpoint for resume on timeout
+        ckpt = {
+            "model_state_dict": model.module.state_dict() if isinstance(model, torch.nn.DataParallel) else model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict(),
+            "epoch": epoch,
+            "best_val_loss": best_val_loss,
+            "best_epoch": best_epoch,
+        }
+        torch.save(ckpt, os.path.join(run_dir, "checkpoint.pt"))
+
+        if True: # Output every single epoch
             extra = ""
             if mode == "vae":
                 extra = f"kld={val_m['kld']:.4f} beta={val_m['beta']:.3f} "
             elif mode == "vqvae":
                 extra = f"vq={val_m['vq_loss']:.4f} cb_use={val_m.get('codebook_usage', 0):.0f} "
+            color_str = f"color={val_m.get('color_loss', 0):.4f} " if color_weight > 0 else ""
+            gp_str = f"gp={val_m.get('gp_loss', 0):.4f} " if gp_weight > 0 else ""
             print(
                 f"  [{epoch:3d}/{epochs}] "
                 f"train={train_m['total_loss']:.4f} "
                 f"val={val_m['total_loss']:.4f} "
                 f"(cont={val_m['recon_cont']:.4f} band={val_m['recon_band']:.4f}) "
+                f"{color_str}"
+                f"{gp_str}"
                 f"{extra}"
                 f"band_acc={val_m['band_acc']:.3f} "
                 f"[{dt:.1f}s]"
             )
 
     # Best model → test evaluation
-    model.load_state_dict(
-        torch.load(os.path.join(run_dir, "best_model.pt"), weights_only=True)
-    )
+    best_state_dict = torch.load(os.path.join(run_dir, "best_model.pt"), weights_only=True, map_location=device)
+    if isinstance(model, torch.nn.DataParallel):
+        model.module.load_state_dict(best_state_dict)
+    else:
+        model.load_state_dict(best_state_dict)
     test_m = evaluate(
         model,
         test_loader,
@@ -393,6 +496,8 @@ def train_model(
         target_beta,
         device,
         cls_weight=cls_weight,
+        band_weight=band_weight,
+        color_weight=color_weight,
     )
 
     # Extract embeddings for downstream evaluation
@@ -487,9 +592,9 @@ def main():
     )
     parser.add_argument(
         "--image-backbone",
-        choices=["simple", "zoobot"],
+        choices=["simple", "zoobot", "zoobot_large", "dinov2"],
         default="simple",
-        help="Image tower backbone: simple (4-layer CNN) or zoobot (Galaxy Zoo pretrained ConvNeXt)",
+        help="Image tower backbone: simple (4-layer CNN), zoobot (ConvNeXt-pico), zoobot_large (ConvNeXt-large, ~198M params), or dinov2 (ViT-S/14, ~22M params)",
     )
     parser.add_argument(
         "--finetune-backbone",
@@ -520,6 +625,24 @@ def main():
         help="Weight for joint classification loss (0=reconstruction only)",
     )
     parser.add_argument(
+        "--band-weight",
+        type=float,
+        default=1.0,
+        help="Weight for band reconstruction loss (0=cont-only, 1=default 50/50)",
+    )
+    parser.add_argument(
+        "--color-weight",
+        type=float,
+        default=0.0,
+        help="Weight for color (g-r) prediction loss (0=disabled)",
+    )
+    parser.add_argument(
+        "--gp-weight",
+        type=float,
+        default=0.0,
+        help="Weight for GP feature prediction loss (0=disabled)",
+    )
+    parser.add_argument(
         "--num-classes",
         type=int,
         default=5,
@@ -540,6 +663,11 @@ def main():
         type=int,
         default=3,
         help="Minimum detections when using --random-truncate",
+    )
+    parser.add_argument(
+        "--resume-from",
+        default=None,
+        help="Path to .pt checkpoint to resume training from",
     )
     args = parser.parse_args()
 
@@ -575,6 +703,10 @@ def main():
             cls_weight=args.cls_weight,
             num_classes=args.num_classes,
             synthetic_dir=args.synthetic_dir,
+            resume_from=args.resume_from,
+            band_weight=args.band_weight,
+            color_weight=args.color_weight,
+            gp_weight=args.gp_weight,
         )
         all_summaries.append(s)
 

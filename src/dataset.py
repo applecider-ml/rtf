@@ -1,59 +1,48 @@
 """
 Standalone PyTorch datasets for ZTF alert data.
 
-Two dataset classes:
+Four dataset classes:
+  - ShardedDataset: loads from packed .pt shard files (fastest, from pack_shards.py)
+  - MetaNPZDataset: loads from pre-processed NPZ files with metadata+images
   - PhotoNPZDataset: loads from pre-processed NPZ files (photo_events/)
-  - AlertDataset: loads directly from raw alerts.npy files (data_ztf/),
-    extracting photometry + 36 alert metadata fields per observation
+  - AlertDataset: loads directly from raw alerts.npy files (data_ztf/)
 
-AlertDataset is preferred — it uses the raw alert data with no intermediate
-preprocessing, and includes rich metadata (star/galaxy scores, PSF shape,
-real/bogus, nearest source properties, etc.) that improve compression quality.
+ShardedDataset is preferred for large-scale training — it eliminates the
+catastrophic GPFS file-open overhead of 1.74M individual np.load() calls.
 """
+from __future__ import annotations
 
 import csv
+import random
 from pathlib import Path
 
 import numpy as np
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, IterableDataset
 
 # Number of base continuous channels (dt, dt_prev, logflux, logflux_err)
 N_CONT_BASE = 4
 
 # Alert metadata fields to extract from each alert candidate.
-# These are the most informative fields for transient classification.
+# BOOM-compatible subset: only the 11 keys that exist in BOTH the public
+# ZTF alert archive (ztf.uw.edu) AND the BOOM API (ZTF_alerts_aux).
+# This ensures models trained on these keys work identically on both
+# data sources without distribution shift from missing metadata.
+# Original list had 30 keys (19 were PS1/color fields BOOM doesn't store).
+# ORDER MUST MATCH the repacked shard column order (sorted by original
+# position in the full 30-key list), NOT alphabetical!
 ALERT_META_KEYS = [
-    "sgscore1",
-    "sgscore2",  # star/galaxy scores for PS1 neighbors
-    "distpsnr1",
-    "distpsnr2",  # distance to nearest PS1 sources (arcsec)
-    "nmtchps",  # number of PS1 matches
     "sharpnr",  # sharpness of nearest source
     "scorr",  # detection significance (S/N)
     "diffmaglim",  # 5-sigma limiting mag
     "sky",  # local sky background
-    "ndethist",  # cumulative detections
-    "ncovhist",  # times field observed
     "sigmapsf",  # PSF mag uncertainty
-    "chinr",  # chi^2 of nearest PS1 source
-    "classtar",  # SExtractor star/galaxy
+    "chinr",  # chi^2 of nearest ref source
     "rb",  # Real/Bogus score
     "chipsf",  # chi^2 of PSF fit
     "distnr",  # distance to nearest ref source (arcsec)
     "magnr",  # mag of nearest ref source
     "fwhm",  # PSF FWHM
-    "srmag1",
-    "sgmag1",
-    "simag1",
-    "szmag1",  # PS1 mags of nearest source
-    "srmag2",
-    "sgmag2",
-    "simag2",
-    "szmag2",  # PS1 mags of 2nd nearest
-    "clrcoeff",
-    "clrcounc",  # color coefficients
-    "zpclrcov",  # zeropoint color covariance
 ]
 
 # Total input channels: 4 base + 3 one-hot band + len(ALERT_META_KEYS) metadata
@@ -80,7 +69,7 @@ class AlertDataset(Dataset):
         horizon: maximum dt in days (None = no cut)
     """
 
-    COARSE_MAP = {0: 0, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 2, 8: 3, 9: 4}
+    COARSE_MAP = {0: 0, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 2, 8: 3, 9: 4}  # noqa: RUF012
 
     def __init__(
         self,
@@ -90,7 +79,7 @@ class AlertDataset(Dataset):
         labels_path: str,
         use_metadata: bool = True,
         max_len: int = 257,
-        horizon: float = None,
+        horizon: float | None = None,
     ):
         self.data_dir = Path(data_dir)
         self.labels_path = Path(labels_path)
@@ -253,7 +242,7 @@ class MetaNPZDataset(Dataset):
     Created by preprocess_alerts.py from raw alerts.npy files.
     """
 
-    COARSE_MAP = {0: 0, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 2, 8: 3, 9: 4}
+    COARSE_MAP = {0: 0, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 2, 8: 3, 9: 4}  # noqa: RUF012
 
     def __init__(
         self,
@@ -261,7 +250,7 @@ class MetaNPZDataset(Dataset):
         max_len: int = 257,
         use_images: bool = False,
         use_gp: bool = False,
-        max_detections: int = None,
+        max_detections: int | None = None,
         random_truncate: bool = False,
         min_detections: int = 3,
     ):
@@ -274,8 +263,11 @@ class MetaNPZDataset(Dataset):
         self.min_detections = min_detections
         self.in_channels = IN_CHANNELS_META
 
-        candidates = sorted(list(self.data_dir.glob("*.npz")))
-        self.files = [f for f in candidates if f.stat().st_size >= 200]
+        # NOTE: We skip the f.stat() filesize check here because on GPFS,
+        # calling stat() on 200k+ files per directory causes a multi-hour
+        # network metadata deadlock. Our preprocess_alerts.py already
+        # validated every file, so there are no corrupt files to filter.
+        self.files = sorted(self.data_dir.glob("*.npz"))
         if not self.files:
             raise FileNotFoundError(f"No valid NPZ files in {data_dir}")
 
@@ -402,6 +394,189 @@ class MetaNPZDataset(Dataset):
 
 
 # ---------------------------------------------------------------------------
+# Sharded dataset for large-scale training (from pack_shards.py)
+# Streams one shard at a time — uses ~1GB peak RAM instead of 80GB.
+# ---------------------------------------------------------------------------
+
+
+class ShardedDataset(IterableDataset):
+    """Streaming dataset that loads one .pt shard at a time.
+
+    Instead of loading all 88 shards (~80GB) into RAM upfront, this streams
+    through shards sequentially, loading and freeing each one. Shuffling is
+    done at two levels: shard order is randomized, and samples within each
+    shard are shuffled.
+
+    Peak RAM usage: ~1GB (one shard) instead of ~80GB (all shards).
+    """
+
+    COARSE_MAP = {0: 0, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 2, 8: 3, 9: 4}  # noqa: RUF012
+
+    def __init__(
+        self,
+        shards_dir: str,
+        max_len: int = 257,
+        use_images: bool = False,
+        use_gp: bool = False,
+        gp_dim: int = 80,
+        max_detections: int | None = None,
+        random_truncate: bool = False,
+        min_detections: int = 3,
+    ):
+        super().__init__()
+        self.shards_dir = str(shards_dir)
+        self.max_len = max_len
+        self.use_images = use_images
+        self.use_gp = use_gp
+        self.gp_dim = gp_dim
+        self.max_detections = max_detections
+        self.random_truncate = random_truncate
+        self.min_detections = min_detections
+
+        shard_files = sorted(Path(shards_dir).glob("shard_*.pt"))
+        if not shard_files:
+            raise FileNotFoundError(f"No shard files in {shards_dir}")
+        self.shard_files = [str(f) for f in shard_files]
+
+        # Auto-detect in_channels from the first shard's tensor width.
+        # This supports both old 18-channel ZTF shards (4 base + 3 band + 11 meta)
+        # and new 21-channel joint shards (4 base + 6 band + 11 meta).
+        peek = torch.load(self.shard_files[0], weights_only=False, map_location="cpu")
+        self.in_channels = peek["x_concat"].shape[1]
+        # Metadata columns start after base + band one-hot channels.
+        # We know there are always N_META (11) metadata columns at the end,
+        # so the non-meta prefix = in_channels - N_META.
+        self.n_base_channels = self.in_channels - N_META
+        del peek
+        print(f"  [SHARDS] Auto-detected {self.in_channels} channels "
+              f"(base+band={self.n_base_channels}, meta={N_META})")
+
+        # Estimate total samples without loading any shards.
+        # pack_shards.py writes exactly SHARD_SIZE (20,000) samples per shard,
+        # except the last shard which has the remainder.
+        # The exact count only matters for tqdm/progress bars; __iter__
+        # yields the actual samples regardless.
+        shard_size = 20_000
+        self._total = shard_size * (len(self.shard_files) - 1) + shard_size  # upper bound
+        print(f"  [SHARDS] ~{self._total:,} samples across "
+              f"{len(self.shard_files)} shards (streaming mode, ~1GB peak RAM)")
+
+    def __len__(self):
+        return self._total
+
+    def __iter__(self):
+        # Determine which shards this worker handles
+        worker_info = torch.utils.data.get_worker_info()
+        shard_indices = list(range(len(self.shard_files)))
+
+        if worker_info is not None:
+            # Split shards across workers (no duplicates)
+            n_workers = worker_info.num_workers
+            worker_id = worker_info.id
+            shard_indices = [i for i in shard_indices
+                            if i % n_workers == worker_id]
+
+        # Shuffle shard order for this epoch
+        random.shuffle(shard_indices)
+
+        yielded = 0
+        for si, shard_idx in enumerate(shard_indices):
+            sf = self.shard_files[shard_idx]
+            shard = torch.load(sf, weights_only=False, map_location="cpu")
+            n = len(shard["labels"])
+
+            # Print progress (only from worker 0 or main process)
+            if (worker_info is None or worker_info.id == 0) and ((si + 1) % 5 == 0 or si == 0):
+                    print(f"    [shard {si+1}/{len(shard_indices)}] "
+                          f"{yielded:,} samples streamed so far")
+
+            # Shuffle sample order within this shard
+            indices = list(range(n))
+            random.shuffle(indices)
+
+            for local_idx in indices:
+                sample = self._process_sample(shard, local_idx)
+                if sample is not None:
+                    yielded += 1
+                    yield sample
+
+            # Free memory immediately
+            del shard
+
+        if worker_info is None or worker_info.id == 0:
+            print(f"    [DONE] {yielded:,} samples streamed this epoch")
+
+    def _process_sample(self, shard, local_idx):
+        try:
+            # Extract raw sequence from concatenated tensor
+            start = shard["x_offsets"][local_idx].item()
+            end = shard["x_offsets"][local_idx + 1].item()
+            x = shard["x_concat"][start:end].numpy().copy()
+            label = shard["labels"][local_idx].item()
+            obj_id = shard["obj_ids"][local_idx]
+
+            # Apply truncation (identical to MetaNPZDataset._load_item)
+            L = min(x.shape[0], self.max_len)
+            if self.max_detections is not None:
+                L = min(L, self.max_detections)
+            if self.random_truncate and L > self.min_detections:
+                L = random.randint(self.min_detections, L)
+            x = x[:L]
+
+            # IQR normalization on metadata columns.
+            # n_base_channels is auto-detected: 7 for old ZTF shards, 10 for joint.
+            nb = self.n_base_channels
+            if x.shape[1] > nb:
+                meta = x[:, nb:]
+                for j in range(meta.shape[1]):
+                    col = meta[:, j]
+                    med = np.median(col)
+                    iqr = np.percentile(col, 75) - np.percentile(col, 25)
+                    if iqr > 1e-6:
+                        meta[:, j] = (col - med) / iqr
+                    else:
+                        meta[:, j] = col - med
+                x[:, nb:] = np.clip(meta, -10.0, 10.0)
+
+            result = {
+                "x": torch.from_numpy(x),
+                "label_fine": label,
+                "label_coarse": self.COARSE_MAP.get(label, 0),
+                "obj_id": obj_id,
+                "seq_len": L,
+            }
+
+            if self.use_images:
+                result["image"] = shard["images"][local_idx]
+
+            if self.use_gp:
+                if "gp_features" in shard and shard["gp_features"].shape[-1] > 0:
+                    gp = shard["gp_features"][local_idx].float().clone()
+                    # Handle dimension mismatch: pad or truncate to gp_dim
+                    actual_dim = gp.shape[0]
+                    if actual_dim == self.gp_dim:
+                        pass  # perfect match
+                    elif actual_dim < self.gp_dim:
+                        padded = torch.zeros(self.gp_dim)
+                        padded[:actual_dim] = gp
+                        gp = padded
+                    else:
+                        gp = gp[:self.gp_dim]
+                    # Clean up non-finite values
+                    gp = torch.nan_to_num(gp, nan=0.0, posinf=0.0, neginf=0.0)
+                    gp = gp.clamp(-10.0, 10.0)
+                    result["gp_features"] = gp
+                else:
+                    # Shards without GP features: return zeros
+                    result["gp_features"] = torch.zeros(self.gp_dim)
+
+            return result
+
+        except Exception:
+            return None
+
+
+# ---------------------------------------------------------------------------
 # Legacy dataset for pre-processed NPZ files (photometry only)
 # ---------------------------------------------------------------------------
 
@@ -419,14 +594,14 @@ class PhotoNPZDataset(Dataset):
         use_metadata: If True, include inter-band colors from NPZ (13 channels).
     """
 
-    COARSE_MAP = {0: 0, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 2, 8: 3, 9: 4}
+    COARSE_MAP = {0: 0, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 2, 8: 3, 9: 4}  # noqa: RUF012
 
     def __init__(
         self,
         data_dir: str,
-        stats_path: str = None,
+        stats_path: str | None = None,
         max_len: int = 257,
-        horizon: float = None,
+        horizon: float | None = None,
         use_metadata: bool = False,
     ):
         self.data_dir = Path(data_dir)
@@ -435,7 +610,7 @@ class PhotoNPZDataset(Dataset):
         self.use_metadata = use_metadata
         self.in_channels = 13 if use_metadata else 7
 
-        candidates = sorted(list(self.data_dir.glob("*.npz")))
+        candidates = sorted(self.data_dir.glob("*.npz"))
         self.files = [f for f in candidates if f.stat().st_size >= 200]
         n_bad = len(candidates) - len(self.files)
         if not self.files:

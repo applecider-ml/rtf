@@ -21,7 +21,6 @@ import os
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
@@ -31,6 +30,7 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 from sklearn.preprocessing import StandardScaler
+from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 COARSE_NAMES = ["SNIa", "SNcc", "Cataclysmic", "AGN", "TDE"]

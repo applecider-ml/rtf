@@ -109,7 +109,7 @@ def plot_latent_scatter(
     figsize=(10, 8),
 ):
     """Scatter plot of 2D projected embeddings colored by class."""
-    fig, ax = plt.subplots(figsize=figsize)
+    _fig, ax = plt.subplots(figsize=figsize)
 
     # Plot rare classes last (on top) for visibility
     unique_labels = np.unique(labels)
@@ -146,7 +146,7 @@ def plot_latent_scatter(
 
 def plot_recon_error_map(proj, recon_errors, title, output_path, figsize=(10, 8)):
     """Scatter plot colored by reconstruction error (anomaly score)."""
-    fig, ax = plt.subplots(figsize=figsize)
+    _fig, ax = plt.subplots(figsize=figsize)
 
     # Clip outliers for better colormap
     vmax = np.percentile(recon_errors, 95)

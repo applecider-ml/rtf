@@ -21,7 +21,6 @@ import os
 
 import numpy as np
 
-
 # Label mapping: population type → coarse class
 LABEL_MAP = {
     "Kilonova": 5,  # "other"

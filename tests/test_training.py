@@ -1,12 +1,12 @@
 """Integration tests: training loop, embedding extraction, linear probe."""
 
+import sys
+from pathlib import Path
+
 import numpy as np
 import pytest
 import torch
 from torch.utils.data import DataLoader
-
-import sys
-from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
