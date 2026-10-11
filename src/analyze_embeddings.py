@@ -40,14 +40,16 @@ def load_data(args):
     recon_error = emb_data["recon_error"]
     n_det = emb_data["n_detections"]
 
-    df = pd.DataFrame({
-        "obj_id": obj_ids,
-        "recon_cont": recon_cont,
-        "recon_band": recon_band,
-        "band_acc": band_acc,
-        "recon_error": recon_error,
-        "n_detections": n_det,
-    })
+    df = pd.DataFrame(
+        {
+            "obj_id": obj_ids,
+            "recon_cont": recon_cont,
+            "recon_band": recon_band,
+            "band_acc": band_acc,
+            "recon_error": recon_error,
+            "n_detections": n_det,
+        }
+    )
 
     # Anomaly scores
     scores_df = pd.read_csv(args.scores)
@@ -61,10 +63,7 @@ def load_data(args):
     if args.triage and os.path.exists(args.triage):
         with open(args.triage) as f:
             triage = json.load(f)
-        triage_df = pd.DataFrame([
-            {"obj_id": r["obj_id"], "verdict": r["verdict"]}
-            for r in triage
-        ])
+        triage_df = pd.DataFrame([{"obj_id": r["obj_id"], "verdict": r["verdict"]} for r in triage])
         df = df.merge(triage_df, on="obj_id", how="left")
     else:
         df["verdict"] = None
@@ -79,6 +78,7 @@ def plot_umap(embeddings, df, output_dir):
     except ImportError:
         print("  umap-learn not installed, trying sklearn TSNE instead...")
         from sklearn.manifold import TSNE
+
         reducer = TSNE(n_components=2, perplexity=30, random_state=42)
         coords = reducer.fit_transform(embeddings)
         method = "t-SNE"
@@ -138,7 +138,8 @@ def plot_umap(embeddings, df, output_dir):
         mask = verdicts == v
         if mask.sum() > 0:
             ax.scatter(
-                coords[mask, 0], coords[mask, 1],
+                coords[mask, 0],
+                coords[mask, 1],
                 c=verdict_colors.get(v, "#95a5a6"),
                 s=12 if v == "interesting" else 6,
                 alpha=0.8 if v in ("interesting", "known_type") else 0.3,
@@ -257,6 +258,7 @@ def compute_clustering_metrics(embeddings, df, output_dir):
     # k-NN accuracy (leave-one-out style with k=5)
     knn = KNeighborsClassifier(n_neighbors=min(5, len(X) - 1), metric="cosine")
     from sklearn.model_selection import cross_val_score
+
     if len(X) >= 10:
         cv_scores = cross_val_score(knn, X, y, cv=min(5, n_classes), scoring="accuracy")
         knn_acc = cv_scores.mean()
@@ -284,17 +286,27 @@ def print_summary(df, corr, sil, knn_acc, output_dir):
     ]
 
     if corr > 0.8:
-        lines.append("> **High correlation.** Both components capture similar information. Weighting has minimal impact.")
+        lines.append(
+            "> **High correlation.** Both components capture similar information. Weighting has minimal impact."
+        )
     elif corr > 0.4:
-        lines.append("> **Moderate correlation.** Components are partially complementary. Current 50/50 is reasonable but could be tuned.")
+        lines.append(
+            "> **Moderate correlation.** Components are partially complementary. Current 50/50 is reasonable but could be tuned."
+        )
     else:
-        lines.append("> **Low correlation.** Components capture different signals. One may be more useful for anomaly detection than the other.")
+        lines.append(
+            "> **Low correlation.** Components capture different signals. One may be more useful for anomaly detection than the other."
+        )
 
     lines += [
         "",
         "## Embedding Quality (known-class Fritz sources)",
-        f"- **Silhouette score (cosine):** {sil:.4f}" if sil is not None else "- Silhouette: N/A (too few classes)",
-        f"- **k-NN accuracy (5-fold CV, k=5):** {knn_acc:.4f}" if knn_acc is not None else "- k-NN: N/A",
+        f"- **Silhouette score (cosine):** {sil:.4f}"
+        if sil is not None
+        else "- Silhouette: N/A (too few classes)",
+        f"- **k-NN accuracy (5-fold CV, k=5):** {knn_acc:.4f}"
+        if knn_acc is not None
+        else "- k-NN: N/A",
         "",
         "## Interpretation",
     ]
@@ -303,9 +315,13 @@ def print_summary(df, corr, sil, knn_acc, output_dir):
         if sil > 0.3:
             lines.append("- Silhouette > 0.3 indicates reasonable clustering by known class.")
         elif sil > 0.1:
-            lines.append("- Silhouette 0.1-0.3 indicates weak clustering. Embeddings partially separate types.")
+            lines.append(
+                "- Silhouette 0.1-0.3 indicates weak clustering. Embeddings partially separate types."
+            )
         else:
-            lines.append("- Silhouette < 0.1 indicates poor clustering. Known types overlap heavily in embedding space.")
+            lines.append(
+                "- Silhouette < 0.1 indicates poor clustering. Known types overlap heavily in embedding space."
+            )
 
     lines += [
         "",

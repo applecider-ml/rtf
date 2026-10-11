@@ -41,8 +41,14 @@ LLM_TEMPERATURE = 0.2
 
 # Parametric model ID → name
 MODEL_NAMES = {
-    0: "Bazin", 1: "Villar", 2: "MetzgerKN", 3: "Tde",
-    4: "Arnett", 5: "Magnetar", 6: "ShockCooling", 7: "Afterglow",
+    0: "Bazin",
+    1: "Villar",
+    2: "MetzgerKN",
+    3: "Tde",
+    4: "Arnett",
+    5: "Magnetar",
+    6: "ShockCooling",
+    7: "Afterglow",
 }
 
 # Per-group system prompts
@@ -60,7 +66,6 @@ Focus your analysis on:
 
 Respond ONLY with valid JSON (no markdown, no explanation outside JSON):
 {"verdict": "interesting|known_type|artifact", "confidence": 0.0-1.0, "reasoning": "2-3 sentences", "suggested_class": "your best guess", "followup": "recommended observations"}""",
-
     "Fast_Transients": """You are an expert observational astrophysicist specializing in fast transients (FBOTs, afterglows, rapid novae).
 An autoencoder trained on 1.74 million ZTF alerts has flagged this object as anomalous.
 
@@ -73,7 +78,6 @@ Focus your analysis on:
 
 Respond ONLY with valid JSON (no markdown, no explanation outside JSON):
 {"verdict": "interesting|known_type|artifact", "confidence": 0.0-1.0, "reasoning": "2-3 sentences", "suggested_class": "your best guess", "followup": "recommended observations"}""",
-
     "LIONS": """You are an expert observational astrophysicist reviewing live interesting transient candidates from the LIONS program.
 An autoencoder trained on 1.74 million ZTF alerts has flagged this object as anomalous.
 
@@ -112,9 +116,9 @@ def plot_lightcurve(fritz_npz_path, output_png_path, obj_id, classification=""):
         return False
 
     # Extract columns
-    dt = np.expm1(x[:, 0])   # days since first detection
-    logflux = x[:, 2]        # -0.4 * mag → mag = logflux / -0.4
-    logflux_err = x[:, 3]    # 0.4 * magerr → magerr = logflux_err / 0.4
+    dt = np.expm1(x[:, 0])  # days since first detection
+    logflux = x[:, 2]  # -0.4 * mag → mag = logflux / -0.4
+    logflux_err = x[:, 3]  # 0.4 * magerr → magerr = logflux_err / 0.4
     band_id = x[:, 4:7].argmax(axis=1)  # 0=g, 1=r, 2=i
 
     # Convert to magnitude
@@ -138,11 +142,17 @@ def plot_lightcurve(fritz_npz_path, output_png_path, obj_id, classification=""):
     for bid in sorted(set(band_id)):
         mask = band_id == bid
         ax.errorbar(
-            dt[mask], mag[mask], yerr=magerr[mask],
-            fmt="o", ms=3.5, lw=0.8, capsize=1.5,
+            dt[mask],
+            mag[mask],
+            yerr=magerr[mask],
+            fmt="o",
+            ms=3.5,
+            lw=0.8,
+            capsize=1.5,
             color=BAND_COLORS.get(bid, "gray"),
             label=BAND_LABELS.get(bid, f"band{bid}"),
-            alpha=0.8, zorder=3,
+            alpha=0.8,
+            zorder=3,
         )
 
     ax.invert_yaxis()  # Astronomical convention: brighter = lower mag
@@ -185,7 +195,9 @@ def build_physics_prompt(obj_row, feature_row):
 
     # Best parametric model
     best_model_val = feature_row.get("param_best_model", None)
-    if best_model_val is not None and not (isinstance(best_model_val, float) and math.isnan(best_model_val)):
+    if best_model_val is not None and not (
+        isinstance(best_model_val, float) and math.isnan(best_model_val)
+    ):
         best_model_name = MODEL_NAMES.get(int(best_model_val), f"Model_{int(best_model_val)}")
     else:
         best_model_name = "N/A"
@@ -212,30 +224,30 @@ RTF Autoencoder Analysis:
   Isolation Forest Score: {if_score:.4f}
 
 Light Curve Fitting (GP nonparametric):
-  Rise time: {_safe_get(feature_row, 'np_rise_time', '.1f')} days
-  Decay time: {_safe_get(feature_row, 'np_decay_time', '.1f')} days
-  Rise rate: {_safe_get(feature_row, 'np_rise_rate', '.3f')} mag/day
-  Decay rate: {_safe_get(feature_row, 'np_decay_rate', '.3f')} mag/day
-  FWHM: {_safe_get(feature_row, 'np_fwhm', '.1f')} days
-  Peak magnitude: {_safe_get(feature_row, 'np_peak_mag', '.2f')}
-  Peak color (g-r): {_safe_get(feature_row, 'np_peak_color_g_r', '.3f')}
-  Color at +30d (g-r): {_safe_get(feature_row, 'np_color_g_r_30d', '.3f')}
-  Color evolution rate: {_safe_get(feature_row, 'np_color_evolution_rate', '.4f')} mag/day
-  Von Neumann ratio: {_safe_get(feature_row, 'np_von_neumann_ratio', '.3f')}
-  GP chi2: {_safe_get(feature_row, 'np_chi2', '.2f')}
-  Decay power law index: {_safe_get(feature_row, 'np_decay_power_law_index', '.2f')}
+  Rise time: {_safe_get(feature_row, "np_rise_time", ".1f")} days
+  Decay time: {_safe_get(feature_row, "np_decay_time", ".1f")} days
+  Rise rate: {_safe_get(feature_row, "np_rise_rate", ".3f")} mag/day
+  Decay rate: {_safe_get(feature_row, "np_decay_rate", ".3f")} mag/day
+  FWHM: {_safe_get(feature_row, "np_fwhm", ".1f")} days
+  Peak magnitude: {_safe_get(feature_row, "np_peak_mag", ".2f")}
+  Peak color (g-r): {_safe_get(feature_row, "np_peak_color_g_r", ".3f")}
+  Color at +30d (g-r): {_safe_get(feature_row, "np_color_g_r_30d", ".3f")}
+  Color evolution rate: {_safe_get(feature_row, "np_color_evolution_rate", ".4f")} mag/day
+  Von Neumann ratio: {_safe_get(feature_row, "np_von_neumann_ratio", ".3f")}
+  GP chi2: {_safe_get(feature_row, "np_chi2", ".2f")}
+  Decay power law index: {_safe_get(feature_row, "np_decay_power_law_index", ".2f")}
 
 Parametric Model Fitting:
   Best-fit model: {best_model_name}
-  PSO chi2: {_safe_get(feature_row, 'param_pso_chi2', '.3f')}
-  Delta chi2 (best vs 2nd): {_safe_get(feature_row, 'param_delta_chi2', '.3f')}
+  PSO chi2: {_safe_get(feature_row, "param_pso_chi2", ".3f")}
+  Delta chi2 (best vs 2nd): {_safe_get(feature_row, "param_delta_chi2", ".3f")}
   Per-model chi2 breakdown:
 {chi2_breakdown}
 
 Thermal (Blackbody) Fitting:
-  Peak temperature: {_safe_get(feature_row, 'thermal_log_temp_peak', '.2f')} log K
-  Cooling rate: {_safe_get(feature_row, 'thermal_cooling_rate', '.4f')}
-  Thermal chi2: {_safe_get(feature_row, 'thermal_chi2', '.2f')}"""
+  Peak temperature: {_safe_get(feature_row, "thermal_log_temp_peak", ".2f")} log K
+  Cooling rate: {_safe_get(feature_row, "thermal_cooling_rate", ".4f")}
+  Thermal chi2: {_safe_get(feature_row, "thermal_chi2", ".2f")}"""
 
     return prompt
 
@@ -292,8 +304,8 @@ def call_groq(prompt, system_prompt, groq_key, retries=3):
             data = resp.json()
             return data["choices"][0]["message"]["content"]
         except Exception as e:
-            print(f"      API error (attempt {attempt+1}): {e}")
-            time.sleep(2 ** attempt)
+            print(f"      API error (attempt {attempt + 1}): {e}")
+            time.sleep(2**attempt)
 
     return '{"verdict": "error", "confidence": 0, "reasoning": "API call failed after retries", "suggested_class": "unknown", "followup": "retry"}'
 
@@ -357,7 +369,9 @@ def generate_report(results, output_path, plots_dir=None):
                     lines.append(f"![{r['obj_id']}]({plots_dir}/{png_name})")
                     lines.append("")
 
-            lines.append(f"**LLM Verdict:** {emoji} {verdict.replace('_', ' ').title()} (confidence: {confidence:.2f})")
+            lines.append(
+                f"**LLM Verdict:** {emoji} {verdict.replace('_', ' ').title()} (confidence: {confidence:.2f})"
+            )
             lines.append(f"**Suggested Type:** {suggested}")
             lines.append(f"**Reasoning:** {reasoning}")
             lines.append(f"**Follow-up:** {followup}")
@@ -366,7 +380,9 @@ def generate_report(results, output_path, plots_dir=None):
             # Key physics features
             lines.append("| Feature | Value |")
             lines.append("|---|---|")
-            lines.append(f"| Recon Error | {r['recon_error']:.4f} ({r['recon_error']/0.001251:.0f}x baseline) |")
+            lines.append(
+                f"| Recon Error | {r['recon_error']:.4f} ({r['recon_error'] / 0.001251:.0f}x baseline) |"
+            )
             lines.append(f"| IF Score | {r['if_score']:.4f} |")
             lines.append(f"| Detections | {r.get('n_detections', 'N/A')} |")
             lines.append(f"| Classification | {r.get('classification', 'None') or 'None'} |")
@@ -395,17 +411,23 @@ def generate_report(results, output_path, plots_dir=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="LLM triage on Fritz sources with AppleCiDEr physics")
+    parser = argparse.ArgumentParser(
+        description="LLM triage on Fritz sources with AppleCiDEr physics"
+    )
     parser.add_argument("--scores-csv", required=True, help="anomaly_scores.csv")
     parser.add_argument("--features", required=True, help="fritz_features.parquet")
     parser.add_argument("--manifest", required=True, help="fritz_manifest.csv")
     parser.add_argument("--fritz-dir", required=True, help="Fritz sources dir (with NPZ files)")
     parser.add_argument("--groq-key", required=True, help="Groq API key")
     parser.add_argument("--top-n", type=int, default=30, help="Top N per group for LLM")
-    parser.add_argument("--min-detections", type=int, default=10, help="Minimum detections to include")
+    parser.add_argument(
+        "--min-detections", type=int, default=10, help="Minimum detections to include"
+    )
     parser.add_argument("--output-json", default="llm_triage_results.json")
     parser.add_argument("--output-report", default="triage_report.md")
-    parser.add_argument("--dry-run", action="store_true", help="Show candidates without calling API")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show candidates without calling API"
+    )
     args = parser.parse_args()
 
     print("=== LLM Triage with AppleCiDEr Physics ===")
@@ -425,7 +447,9 @@ def main():
     # ── Filter by min detections ──
     pre_filter = len(scores_df)
     scores_df = scores_df[scores_df["n_detections"] >= args.min_detections]
-    print(f"  After min-detections filter (>={args.min_detections}): {len(scores_df)} / {pre_filter}")
+    print(
+        f"  After min-detections filter (>={args.min_detections}): {len(scores_df)} / {pre_filter}"
+    )
 
     # ── Select candidates ──
     print(f"\n[2/5] Selecting top {args.top_n} per group...")
@@ -438,8 +462,10 @@ def main():
         )
         top = group_df.head(args.top_n)
         candidates.append(top)
-        print(f"  {group}: {len(top)} candidates (score range: "
-              f"{top['anomaly_score'].iloc[-1]:.4f} - {top['anomaly_score'].iloc[0]:.4f})")
+        print(
+            f"  {group}: {len(top)} candidates (score range: "
+            f"{top['anomaly_score'].iloc[-1]:.4f} - {top['anomaly_score'].iloc[0]:.4f})"
+        )
 
     candidates_df = pd.concat(candidates, ignore_index=True)
     total = len(candidates_df)
@@ -457,14 +483,16 @@ def main():
         png_path = os.path.join(plots_dir, f"{obj_id}.png")
         classification = row.get("classification", "")
         if os.path.exists(npz_path) and plot_lightcurve(npz_path, png_path, obj_id, classification):
-                n_plotted += 1
+            n_plotted += 1
     print(f"  Plotted {n_plotted}/{total} light curves")
 
     if args.dry_run:
         print("\n=== DRY RUN — No API calls ===")
         for _, row in candidates_df.iterrows():
-            print(f"  {row['group_name']:20s} | {row['obj_id']:20s} | "
-                  f"score={row['anomaly_score']:.4f} | recon={row['recon_error']:.4f}")
+            print(
+                f"  {row['group_name']:20s} | {row['obj_id']:20s} | "
+                f"score={row['anomaly_score']:.4f} | recon={row['recon_error']:.4f}"
+            )
         print(f"\nWould send {total} sources to Groq. Exiting.")
         return
 
@@ -480,7 +508,7 @@ def main():
         if obj_id in features_df.index:
             feature_row = features_df.loc[obj_id]
         else:
-            print(f"  [{idx+1}/{total}] {obj_id}: no features, using empty")
+            print(f"  [{idx + 1}/{total}] {obj_id}: no features, using empty")
             feature_row = pd.Series(dtype=float)
 
         # Build prompt
@@ -488,7 +516,7 @@ def main():
         system_prompt = SYSTEM_PROMPTS.get(group, DEFAULT_SYSTEM_PROMPT)
 
         # Call Groq
-        print(f"  [{idx+1}/{total}] {obj_id} ({group})...", end=" ", flush=True)
+        print(f"  [{idx + 1}/{total}] {obj_id} ({group})...", end=" ", flush=True)
         response_text = call_groq(prompt, system_prompt, args.groq_key)
         parsed = parse_llm_response(response_text)
         print(f"{parsed.get('verdict', '?')} ({parsed.get('confidence', 0):.2f})")
@@ -510,14 +538,22 @@ def main():
         }
 
         # Attach key physics features for the report
-        for feat_key in ["np_rise_time", "np_decay_time", "np_peak_mag",
-                         "np_peak_color_g_r", "np_fwhm", "np_von_neumann_ratio"]:
+        for feat_key in [
+            "np_rise_time",
+            "np_decay_time",
+            "np_peak_mag",
+            "np_peak_color_g_r",
+            "np_fwhm",
+            "np_von_neumann_ratio",
+        ]:
             val = feature_row.get(feat_key, None)
             if val is not None and isinstance(val, (int, float)) and math.isfinite(val):
                 result[feat_key] = float(val)
 
         best_model = feature_row.get("param_best_model", None)
-        if best_model is not None and not (isinstance(best_model, float) and math.isnan(best_model)):
+        if best_model is not None and not (
+            isinstance(best_model, float) and math.isnan(best_model)
+        ):
             result["param_best_model_name"] = MODEL_NAMES.get(int(best_model), "Unknown")
 
         results.append(result)
@@ -546,8 +582,10 @@ def main():
     print(f"  Total: {len(results)}")
 
     n_interesting = verdicts.get("interesting", 0)
-    print(f"\n  LLM hit rate: {n_interesting}/{len(results)} = "
-          f"{n_interesting/len(results)*100:.0f}% interesting")
+    print(
+        f"\n  LLM hit rate: {n_interesting}/{len(results)} = "
+        f"{n_interesting / len(results) * 100:.0f}% interesting"
+    )
 
     print("\n=== DONE ===")
 

@@ -95,15 +95,11 @@ def infer_decomposed(model, x_np, image_np, device):
         # Compute recon_band (CE on band prediction)
         band_target = x[..., 4:7].argmax(-1)  # (1, L)
         B, L = pad_mask.shape
-        ce = F.cross_entropy(
-            band_logits.reshape(-1, 3), band_target.reshape(-1), reduction="none"
-        )
+        ce = F.cross_entropy(band_logits.reshape(-1, 3), band_target.reshape(-1), reduction="none")
         recon_band_val = ((ce.reshape(B, L) * valid).sum() / n_valid).item()
 
         # Band accuracy
-        band_acc = (
-            (band_logits.argmax(-1) == band_target) * valid
-        ).sum().item() / n_valid.item()
+        band_acc = ((band_logits.argmax(-1) == band_target) * valid).sum().item() / n_valid.item()
 
     return (
         emb[0].cpu().numpy(),
@@ -170,12 +166,12 @@ def main():
             n_detections.append(x.shape[0])
 
         except Exception as e:
-            print(f"  [{idx+1}] {obj_id}: ERROR - {e}")
+            print(f"  [{idx + 1}] {obj_id}: ERROR - {e}")
             continue
 
         if (idx + 1) % 100 == 0:
             elapsed = time.time() - t0
-            print(f"  [{idx+1}/{len(npz_files)}] {elapsed:.1f}s")
+            print(f"  [{idx + 1}/{len(npz_files)}] {elapsed:.1f}s")
 
     elapsed = time.time() - t0
     print(f"\n  Done: {len(obj_ids)} sources in {elapsed:.1f}s")

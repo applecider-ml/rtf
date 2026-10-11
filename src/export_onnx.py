@@ -31,6 +31,7 @@ IN_CHANNELS = 37
 
 # ── Wrapper modules for clean ONNX graphs ──────────────────────────────
 
+
 class EmbedWrapper(nn.Module):
     """Wraps model.embed() into a single-output module for ONNX export."""
 
@@ -66,9 +67,9 @@ class ReconWrapper(nn.Module):
         valid = ~pad_mask
         n_valid = valid.sum(dim=1).clamp(min=1).float()
 
-        cont_err = ((cont_hat - x[..., :4]) ** 2 * valid.unsqueeze(-1)).sum(
-            dim=(1, 2)
-        ) / (n_valid * 4)
+        cont_err = ((cont_hat - x[..., :4]) ** 2 * valid.unsqueeze(-1)).sum(dim=(1, 2)) / (
+            n_valid * 4
+        )
         band_target = x[..., 4:7].argmax(-1)
         B, L_act = band_target.shape
         ce = F.cross_entropy(
@@ -173,9 +174,7 @@ def verify_onnx(onnx_path, wrapper, dummy_x, dummy_mask, dummy_img, name):
 
 def main():
     parser = argparse.ArgumentParser(description="Export RTF model to ONNX")
-    parser.add_argument(
-        "--model-path", required=True, help="Path to best_model.pt"
-    )
+    parser.add_argument("--model-path", required=True, help="Path to best_model.pt")
     parser.add_argument(
         "--output-dir",
         default=".",

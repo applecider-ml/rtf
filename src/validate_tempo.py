@@ -13,6 +13,7 @@ Usage (on Delta):
         --data-dir /projects/bcrv/ffontinelenunes/transformer/tempo/data/photo_events \
         --output-dir /work/hdd/bcrv/kmajithia/tempo/validation
 """
+
 import argparse
 import json
 import os
@@ -65,18 +66,15 @@ def load_and_preprocess(filepath, stats):
     arr = np.asarray(arr, dtype=np.float32)
 
     # Preprocess: horizon cut + drop i-band
-    arr = preprocess_photometry_array(
-        arr, horizon_days=HORIZON_DAYS, drop_i_band=DROP_I_BAND
-    )
+    arr = preprocess_photometry_array(arr, horizon_days=HORIZON_DAYS, drop_i_band=DROP_I_BAND)
 
     # Build event tensor (unnormalized)
     import torch
+
     x_raw = build_event_tensor(arr, band_mode=BAND_MODE)
 
     # Compute global features from unnormalized sequence
-    g = _global_features_from_sequence(
-        x_raw, band_mode=BAND_MODE, feature_set=GLOBAL_FEATURE_SET
-    )
+    g = _global_features_from_sequence(x_raw, band_mode=BAND_MODE, feature_set=GLOBAL_FEATURE_SET)
 
     # Truncate to MAX_LEN
     seq_len = x_raw.shape[0]
@@ -198,21 +196,23 @@ def main():
         probs, uncertainty, _alpha, S = evidence_to_probs(evidence)
         pred_class = int(np.argmax(probs))
 
-        results.append({
-            "filepath": str(filepath),
-            "true_subclass": y_sub,
-            "true_broad": y_broad,
-            "true_label": class_names[y_broad],
-            "pred_class": pred_class,
-            "pred_label": class_names[pred_class],
-            "correct": int(pred_class == y_broad),
-            "seq_len": seq_len,
-            "uncertainty": float(uncertainty),
-            "dirichlet_strength": float(S),
-            "max_prob": float(probs.max()),
-            **{f"prob_{class_names[i]}": float(probs[i]) for i in range(NUM_CLASSES)},
-            **{f"evidence_{class_names[i]}": float(evidence[i]) for i in range(NUM_CLASSES)},
-        })
+        results.append(
+            {
+                "filepath": str(filepath),
+                "true_subclass": y_sub,
+                "true_broad": y_broad,
+                "true_label": class_names[y_broad],
+                "pred_class": pred_class,
+                "pred_label": class_names[pred_class],
+                "correct": int(pred_class == y_broad),
+                "seq_len": seq_len,
+                "uncertainty": float(uncertainty),
+                "dirichlet_strength": float(S),
+                "max_prob": float(probs.max()),
+                **{f"prob_{class_names[i]}": float(probs[i]) for i in range(NUM_CLASSES)},
+                **{f"evidence_{class_names[i]}": float(evidence[i]) for i in range(NUM_CLASSES)},
+            }
+        )
 
         if (idx + 1) % 500 == 0:
             print(f"  Processed {idx + 1}/{len(manifest)}")
@@ -243,13 +243,11 @@ def main():
     accuracy = accuracy_score(y_true, y_pred)
     bal_accuracy = balanced_accuracy_score(y_true, y_pred)
 
-    report = classification_report(
-        y_true, y_pred, target_names=class_names, digits=3
-    )
+    report = classification_report(y_true, y_pred, target_names=class_names, digits=3)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("TEMPO ONNX Validation Results")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"Test samples:       {len(df)}")
     print(f"Accuracy:           {accuracy:.4f}")
     print(f"Balanced accuracy:  {bal_accuracy:.4f}")
@@ -259,7 +257,7 @@ def main():
     report_path = out_dir / "tempo_classification_report.txt"
     with open(report_path, "w") as f:
         f.write("TEMPO ONNX Validation Results\n")
-        f.write(f"{'='*60}\n")
+        f.write(f"{'=' * 60}\n")
         f.write(f"ONNX model: {args.onnx}\n")
         f.write(f"Test samples: {len(df)}\n")
         f.write(f"Accuracy: {accuracy:.4f}\n")
@@ -286,8 +284,16 @@ def main():
     for i in range(NUM_CLASSES):
         for j in range(NUM_CLASSES):
             color = "white" if cm[i, j] > cm.max() / 2 else "black"
-            ax.text(j, i, str(cm[i, j]), ha="center", va="center",
-                    fontsize=12, color=color, fontweight="bold")
+            ax.text(
+                j,
+                i,
+                str(cm[i, j]),
+                ha="center",
+                va="center",
+                fontsize=12,
+                color=color,
+                fontweight="bold",
+            )
 
     fig.tight_layout()
     cm_path = out_dir / "tempo_confusion_matrix.png"
@@ -306,8 +312,20 @@ def main():
 
     # 1. Uncertainty distribution: correct vs incorrect
     ax = axes[0, 0]
-    ax.hist(correct["uncertainty"], bins=50, alpha=0.7, label=f"Correct (n={len(correct)})", color="#2196F3")
-    ax.hist(incorrect["uncertainty"], bins=50, alpha=0.7, label=f"Incorrect (n={len(incorrect)})", color="#F44336")
+    ax.hist(
+        correct["uncertainty"],
+        bins=50,
+        alpha=0.7,
+        label=f"Correct (n={len(correct)})",
+        color="#2196F3",
+    )
+    ax.hist(
+        incorrect["uncertainty"],
+        bins=50,
+        alpha=0.7,
+        label=f"Incorrect (n={len(incorrect)})",
+        color="#F44336",
+    )
     ax.set_xlabel("Uncertainty (K/S)")
     ax.set_ylabel("Count")
     ax.set_title("Uncertainty: Correct vs Incorrect")
@@ -324,7 +342,9 @@ def main():
 
     # 3. Per-class uncertainty (box plot)
     ax = axes[1, 0]
-    class_uncertainties = [df[df["true_broad"] == i]["uncertainty"].values for i in range(NUM_CLASSES)]
+    class_uncertainties = [
+        df[df["true_broad"] == i]["uncertainty"].values for i in range(NUM_CLASSES)
+    ]
     bp = ax.boxplot(class_uncertainties, labels=class_names, patch_artist=True)
     colors = ["#2196F3", "#4CAF50", "#FF9800", "#9C27B0", "#F44336"]
     for patch, color in zip(bp["boxes"], colors):
@@ -368,7 +388,9 @@ def main():
         "accuracy": round(accuracy, 4),
         "balanced_accuracy": round(bal_accuracy, 4),
         "mean_uncertainty_correct": round(float(correct["uncertainty"].mean()), 4),
-        "mean_uncertainty_incorrect": round(float(incorrect["uncertainty"].mean()), 4) if len(incorrect) > 0 else None,
+        "mean_uncertainty_incorrect": round(float(incorrect["uncertainty"].mean()), 4)
+        if len(incorrect) > 0
+        else None,
         "per_class": {},
     }
     for i, name in enumerate(class_names):
@@ -390,9 +412,9 @@ def main():
     # ------------------------------------------------------------------
     # Print high-uncertainty examples
     # ------------------------------------------------------------------
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Top 10 Most Uncertain Predictions")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     top_uncertain = df.nlargest(10, "uncertainty")
     for _, row in top_uncertain.iterrows():
         marker = "✗" if not row["correct"] else "✓"
@@ -403,9 +425,9 @@ def main():
             f"| S={row['dirichlet_strength']:.1f}"
         )
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"All outputs saved to: {out_dir}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":

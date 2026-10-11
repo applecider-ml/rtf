@@ -73,9 +73,7 @@ def linear_probe(X_train, y_train, X_test, y_test):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Evaluate RTF at different detection counts"
-    )
+    parser = argparse.ArgumentParser(description="Evaluate RTF at different detection counts")
     parser.add_argument("--checkpoint", required=True, help="Path to best_model.pt")
     parser.add_argument("--summary", required=True, help="Path to summary.json")
     parser.add_argument("--data-dir", required=True, help="Path to preprocessed data")
@@ -87,9 +85,7 @@ def main():
         type=int,
         default=[3, 5, 7, 10, 15, 20, 30, 50, 100],
     )
-    parser.add_argument(
-        "--device", default="cuda" if torch.cuda.is_available() else "cpu"
-    )
+    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument(
         "--image-backbone",
         default=None,
@@ -111,9 +107,7 @@ def main():
 
     image_backbone = args.image_backbone or summary.get("image_backbone", "simple")
     num_classes = (
-        args.num_classes
-        if args.num_classes is not None
-        else summary.get("num_classes", 0)
+        args.num_classes if args.num_classes is not None else summary.get("num_classes", 0)
     )
     model = LightCurveCompressor(
         mode=summary["mode"],
@@ -126,9 +120,7 @@ def main():
         gp_dim=summary.get("gp_dim", 0),
         num_classes=num_classes,
     ).to(args.device)
-    model.load_state_dict(
-        torch.load(args.checkpoint, map_location=args.device, weights_only=True)
-    )
+    model.load_state_dict(torch.load(args.checkpoint, map_location=args.device, weights_only=True))
     model.eval()
     print(f"Loaded model: {summary['mode']} dim={summary['latent_dim']}")
 
@@ -175,12 +167,8 @@ def main():
             pin_memory=pin,
         )
 
-        train_emb, train_fine, train_coarse = extract_embeddings(
-            model, train_loader, args.device
-        )
-        test_emb, test_fine, test_coarse = extract_embeddings(
-            model, test_loader, args.device
-        )
+        train_emb, train_fine, train_coarse = extract_embeddings(model, train_loader, args.device)
+        test_emb, test_fine, test_coarse = extract_embeddings(model, test_loader, args.device)
 
         coarse = linear_probe(train_emb, train_coarse, test_emb, test_coarse)
         fine = linear_probe(train_emb, train_fine, test_emb, test_fine)

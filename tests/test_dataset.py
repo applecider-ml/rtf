@@ -53,9 +53,7 @@ class TestPhotoNPZDataset:
         ds_full = PhotoNPZDataset(str(fake_npz_dir), stats_path=fake_stats)
         ds_cut = PhotoNPZDataset(str(fake_npz_dir), stats_path=fake_stats, horizon=10.0)
         # At least some samples should be shorter with horizon cut
-        shorter = sum(
-            ds_cut[i]["seq_len"] <= ds_full[i]["seq_len"] for i in range(len(ds_full))
-        )
+        shorter = sum(ds_cut[i]["seq_len"] <= ds_full[i]["seq_len"] for i in range(len(ds_full)))
         assert shorter == len(ds_full)
 
     def test_max_len_truncation(self, fake_npz_dir, fake_stats):

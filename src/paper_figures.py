@@ -41,69 +41,71 @@ from matplotlib.patches import Patch
 
 # Architecture colors (colorblind-safe)
 ARCH_COLORS = {
-    "RTF":          "#2563EB",   # blue
-    "Perceiver":    "#DC2626",   # red
-    "AstroDistill": "#059669",   # teal-green
+    "RTF": "#2563EB",  # blue
+    "Perceiver": "#DC2626",  # red
+    "AstroDistill": "#059669",  # teal-green
 }
 
 # Backbone hatching and edge style
 BACKBONE_HATCH = {
-    "simple":       "",          # solid fill
-    "dinov2":       "///",       # diagonal
-    "zoobot":       "xxx",       # cross
-    "zoobot_large": "\\\\\\",   # reverse diagonal
+    "simple": "",  # solid fill
+    "dinov2": "///",  # diagonal
+    "zoobot": "xxx",  # cross
+    "zoobot_large": "\\\\\\",  # reverse diagonal
 }
 
 BACKBONE_LABELS = {
-    "simple":       "Simple CNN",
-    "dinov2":       "DINOv2",
-    "zoobot":       "Zoobot Pico",
+    "simple": "Simple CNN",
+    "dinov2": "DINOv2",
+    "zoobot": "Zoobot Pico",
     "zoobot_large": "Zoobot Large",
 }
 
 # Transient class colors (consistent across all scatter/UMAP plots)
 CLASS_COLORS = {
-    "Ia":                       "#3B82F6",  # blue
-    "Type II":                  "#EF4444",  # red
-    "IIn":                      "#F59E0B",  # amber
-    "Ic-SLSN":                  "#8B5CF6",  # purple
-    "Tidal Disruption Event":   "#10B981",  # emerald
+    "Ia": "#3B82F6",  # blue
+    "Type II": "#EF4444",  # red
+    "IIn": "#F59E0B",  # amber
+    "Ic-SLSN": "#8B5CF6",  # purple
+    "Tidal Disruption Event": "#10B981",  # emerald
 }
 
 CLASS_SHORT = {
-    "Ia":                       "SN Ia",
-    "Type II":                  "SN II",
-    "IIn":                      "SN IIn",
-    "Ic-SLSN":                  "SLSN-Ic",
-    "Tidal Disruption Event":   "TDE",
+    "Ia": "SN Ia",
+    "Type II": "SN II",
+    "IIn": "SN IIn",
+    "Ic-SLSN": "SLSN-Ic",
+    "Tidal Disruption Event": "TDE",
 }
 
 # Matplotlib RC overrides for the whole script
-plt.rcParams.update({
-    "font.family":        "serif",
-    "font.size":          10,
-    "axes.titlesize":     11,
-    "axes.labelsize":     10,
-    "xtick.labelsize":    8,
-    "ytick.labelsize":    8,
-    "legend.fontsize":    8,
-    "figure.dpi":         300,
-    "savefig.dpi":        300,
-    "savefig.bbox":       "tight",
-    "savefig.pad_inches": 0.05,
-    "axes.grid":          True,
-    "grid.alpha":         0.25,
-    "grid.linewidth":     0.5,
-})
+plt.rcParams.update(
+    {
+        "font.family": "serif",
+        "font.size": 10,
+        "axes.titlesize": 11,
+        "axes.labelsize": 10,
+        "xtick.labelsize": 8,
+        "ytick.labelsize": 8,
+        "legend.fontsize": 8,
+        "figure.dpi": 300,
+        "savefig.dpi": 300,
+        "savefig.bbox": "tight",
+        "savefig.pad_inches": 0.05,
+        "axes.grid": True,
+        "grid.alpha": 0.25,
+        "grid.linewidth": 0.5,
+    }
+)
 
 # Chance-level baselines (5-class uniform)
 # RULE: every figure has the null result drawn on it.
 CHANCE_LEVELS = {
-    "knn_acc":            1.0 / 5,          # 0.200 — random 5-class
-    "linear_probe_acc":   1.0 / 5,          # 0.200
-    "if_precision_at_k":  22.0 / 414,       # 0.053 — TDE base rate
+    "knn_acc": 1.0 / 5,  # 0.200 — random 5-class
+    "linear_probe_acc": 1.0 / 5,  # 0.200
+    "if_precision_at_k": 22.0 / 414,  # 0.053 — TDE base rate
 }
-CHANCE_LABEL = "chance (1/5)" 
+CHANCE_LABEL = "chance (1/5)"
 IF_CHANCE_LABEL = "TDE base rate"
 
 
@@ -111,14 +113,21 @@ IF_CHANCE_LABEL = "TDE base rate"
 # HELPER: draw chance-level baseline on an axis
 # ======================================================================
 
+
 def draw_chance_line(ax, metric_key, orientation="vertical"):
     """Draw a dashed chance-level line if this metric has one."""
     if metric_key not in CHANCE_LEVELS:
         return
     level = CHANCE_LEVELS[metric_key]
     label = IF_CHANCE_LABEL if "if_" in metric_key else CHANCE_LABEL
-    kwargs = {"color": "gray", "linestyle": "--", "linewidth": 1, "alpha": 0.6,
-                  "label": label, "zorder": 1}
+    kwargs = {
+        "color": "gray",
+        "linestyle": "--",
+        "linewidth": 1,
+        "alpha": 0.6,
+        "label": label,
+        "zorder": 1,
+    }
     if orientation == "horizontal":
         ax.axvline(level, **kwargs)
     else:
@@ -128,6 +137,7 @@ def draw_chance_line(ax, metric_key, orientation="vertical"):
 # ======================================================================
 # HELPER: parse arch name from encoder string
 # ======================================================================
+
 
 def parse_arch(encoder_name):
     """Return base architecture key from encoder name string."""
@@ -143,9 +153,9 @@ def parse_arch(encoder_name):
 def format_params(n):
     """Format parameter count: 3,617,498 -> '3.6M'."""
     if n >= 1e6:
-        return f"{n/1e6:.1f}M"
+        return f"{n / 1e6:.1f}M"
     elif n >= 1e3:
-        return f"{n/1e3:.0f}K"
+        return f"{n / 1e3:.0f}K"
     return str(n)
 
 
@@ -162,6 +172,7 @@ def save_fig(fig, output_dir, name):
 # FIGURE 1: Full 16-model leaderboard — horizontal bars, 4 metrics
 # ======================================================================
 
+
 def fig_leaderboard(results, output_dir):
     """
     All 16 models ranked by linear probe accuracy.
@@ -177,10 +188,10 @@ def fig_leaderboard(results, output_dir):
     y = np.arange(n)
 
     metrics = [
-        ("linear_probe_acc",   "Linear Probe Accuracy",  "linear_probe_std", None),
-        ("knn_acc",            "$k$-NN Accuracy",        "knn_std",      None),
-        ("if_precision_at_k",  "IF Precision @ 20",      None,           None),
-        ("silhouette",         "Silhouette Score",       None,           None),
+        ("linear_probe_acc", "Linear Probe Accuracy", "linear_probe_std", None),
+        ("knn_acc", "$k$-NN Accuracy", "knn_std", None),
+        ("if_precision_at_k", "IF Precision @ 20", None, None),
+        ("silhouette", "Silhouette Score", None, None),
     ]
 
     fig, axes = plt.subplots(1, 4, figsize=(16, 6), sharey=True)
@@ -192,9 +203,16 @@ def fig_leaderboard(results, output_dir):
         colors = [ARCH_COLORS[parse_arch(r["encoder"])] for r in results]
         hatches = [BACKBONE_HATCH.get(r.get("backbone", "simple"), "") for r in results]
 
-        bars = ax.barh(y, vals, xerr=errs if std_key else None,
-                       color=colors, edgecolor="black", linewidth=0.5,
-                       capsize=2, height=0.7)
+        bars = ax.barh(
+            y,
+            vals,
+            xerr=errs if std_key else None,
+            color=colors,
+            edgecolor="black",
+            linewidth=0.5,
+            capsize=2,
+            height=0.7,
+        )
 
         # Apply hatches
         for bar, hatch in zip(bars, hatches):
@@ -215,22 +233,42 @@ def fig_leaderboard(results, output_dir):
         # Value annotations
         for i, (bar, v) in enumerate(zip(bars, vals)):
             x_pos = max(v, 0) + 0.005
-            ax.text(x_pos, bar.get_y() + bar.get_height()/2,
-                    f"{v:.3f}", va="center", fontsize=6, color="black")
+            ax.text(
+                x_pos,
+                bar.get_y() + bar.get_height() / 2,
+                f"{v:.3f}",
+                va="center",
+                fontsize=6,
+                color="black",
+            )
 
     # Build legend: architecture colors + backbone hatches
-    arch_handles = [Patch(facecolor=c, edgecolor="black", linewidth=0.5, label=a)
-                    for a, c in ARCH_COLORS.items()]
-    bb_handles = [Patch(facecolor="white", edgecolor="black", linewidth=0.5,
-                        hatch=h, label=BACKBONE_LABELS[b])
-                  for b, h in BACKBONE_HATCH.items()]
+    arch_handles = [
+        Patch(facecolor=c, edgecolor="black", linewidth=0.5, label=a)
+        for a, c in ARCH_COLORS.items()
+    ]
+    bb_handles = [
+        Patch(
+            facecolor="white", edgecolor="black", linewidth=0.5, hatch=h, label=BACKBONE_LABELS[b]
+        )
+        for b, h in BACKBONE_HATCH.items()
+    ]
 
-    fig.legend(handles=arch_handles + bb_handles,
-               loc="lower center", ncol=7, fontsize=8,
-               bbox_to_anchor=(0.5, -0.06), frameon=True)
+    fig.legend(
+        handles=arch_handles + bb_handles,
+        loc="lower center",
+        ncol=7,
+        fontsize=8,
+        bbox_to_anchor=(0.5, -0.06),
+        frameon=True,
+    )
 
-    fig.suptitle("16-Model Comparison: Self-Supervised Encoders for ZTF Alert Anomaly Detection",
-                 fontsize=13, fontweight="bold", y=1.02)
+    fig.suptitle(
+        "16-Model Comparison: Self-Supervised Encoders for ZTF Alert Anomaly Detection",
+        fontsize=13,
+        fontweight="bold",
+        y=1.02,
+    )
     fig.tight_layout(rect=[0, 0.04, 1, 0.98])
     save_fig(fig, output_dir, "fig_leaderboard")
 
@@ -238,6 +276,7 @@ def fig_leaderboard(results, output_dir):
 # ======================================================================
 # FIGURE 2: Dimensionality ablation — grouped bars (128/64/32)
 # ======================================================================
+
 
 def fig_dimensionality(results, output_dir):
     """
@@ -255,10 +294,13 @@ def fig_dimensionality(results, output_dir):
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
-    for ax, (metric, title, std_key) in zip(axes, [
-        ("linear_probe_acc", "Linear Probe Accuracy", "linear_probe_std"),
-        ("if_precision_at_k", "IF Precision @ 20", None),
-    ]):
+    for ax, (metric, title, std_key) in zip(
+        axes,
+        [
+            ("linear_probe_acc", "Linear Probe Accuracy", "linear_probe_std"),
+            ("if_precision_at_k", "IF Precision @ 20", None),
+        ],
+    ):
         x = np.arange(len(archs))
         width = 0.25
 
@@ -266,8 +308,9 @@ def fig_dimensionality(results, output_dir):
             vals = []
             errs = []
             for arch in archs:
-                match = [r for r in simple
-                         if parse_arch(r["encoder"]) == arch and r["embed_dim"] == dim]
+                match = [
+                    r for r in simple if parse_arch(r["encoder"]) == arch and r["embed_dim"] == dim
+                ]
                 if match:
                     vals.append(match[0].get(metric, 0))
                     errs.append(match[0].get(std_key, 0) if std_key else 0)
@@ -276,15 +319,28 @@ def fig_dimensionality(results, output_dir):
                     errs.append(0)
 
             offset = (i - 1) * width
-            bars = ax.bar(x + offset, vals, width,
-                          yerr=errs if std_key else None,
-                          label=f"{dim}-D", color=dim_colors[dim],
-                          edgecolor="black", linewidth=0.5, capsize=3)
+            bars = ax.bar(
+                x + offset,
+                vals,
+                width,
+                yerr=errs if std_key else None,
+                label=f"{dim}-D",
+                color=dim_colors[dim],
+                edgecolor="black",
+                linewidth=0.5,
+                capsize=3,
+            )
 
             # Annotate values
             for bar, v in zip(bars, vals):
-                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.005,
-                        f"{v:.2f}", ha="center", va="bottom", fontsize=7)
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + 0.005,
+                    f"{v:.2f}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=7,
+                )
 
         # Chance-level baseline
         draw_chance_line(ax, metric)
@@ -295,8 +351,12 @@ def fig_dimensionality(results, output_dir):
         ax.set_ylabel(title)
         ax.legend(title="Latent Dim", frameon=True)
 
-    fig.suptitle("Effect of Embedding Dimensionality (Simple CNN Backbone)",
-                 fontsize=13, fontweight="bold", y=1.02)
+    fig.suptitle(
+        "Effect of Embedding Dimensionality (Simple CNN Backbone)",
+        fontsize=13,
+        fontweight="bold",
+        y=1.02,
+    )
     fig.tight_layout(rect=[0, 0, 1, 0.98])
     save_fig(fig, output_dir, "fig_dimensionality")
 
@@ -305,6 +365,7 @@ def fig_dimensionality(results, output_dir):
 # FIGURE 3: Backbone impact — RTF with vs without pretrained backbones
 # ======================================================================
 
+
 def fig_backbone_impact(results, output_dir):
     """
     Grouped comparison: RTF baseline vs RTF+DINOv2 vs RTF+ZooP vs RTF+ZooL.
@@ -312,8 +373,7 @@ def fig_backbone_impact(results, output_dir):
     RULE: this is the key finding — pretrained backbones hurt RTF in the unsupervised regime.
     """
     # All RTF variants at 128-D
-    rtf_128 = [r for r in results
-               if parse_arch(r["encoder"]) == "RTF" and r["embed_dim"] == 128]
+    rtf_128 = [r for r in results if parse_arch(r["encoder"]) == "RTF" and r["embed_dim"] == 128]
     rtf_128 = sorted(rtf_128, key=lambda r: r["linear_probe_acc"], reverse=True)
 
     if not rtf_128:
@@ -333,28 +393,46 @@ def fig_backbone_impact(results, output_dir):
     for ax, (key, title, std_key) in zip(axes, metrics):
         vals = [r.get(key, 0) for r in rtf_128]
         errs = [r.get(std_key, 0) if std_key else 0 for r in rtf_128]
-        [BACKBONE_HATCH.get(r.get("backbone", "simple"), "")
-                  for r in rtf_128]
+        [BACKBONE_HATCH.get(r.get("backbone", "simple"), "") for r in rtf_128]
 
-        bars = ax.bar(x, vals, yerr=errs if std_key else None,
-                      color=ARCH_COLORS["RTF"], edgecolor="black",
-                      linewidth=0.5, capsize=3, width=0.6)
+        bars = ax.bar(
+            x,
+            vals,
+            yerr=errs if std_key else None,
+            color=ARCH_COLORS["RTF"],
+            edgecolor="black",
+            linewidth=0.5,
+            capsize=3,
+            width=0.6,
+        )
 
         # Apply backbone hatches
         for bar, r in zip(bars, rtf_128):
             bar.set_hatch(BACKBONE_HATCH.get(r.get("backbone", "simple"), ""))
 
         ax.set_xticks(x)
-        ax.set_xticklabels([BACKBONE_LABELS.get(r.get("backbone", "simple"),
-                           r.get("backbone", "?")) for r in rtf_128],
-                           rotation=0, ha="center", fontsize=8)
+        ax.set_xticklabels(
+            [
+                BACKBONE_LABELS.get(r.get("backbone", "simple"), r.get("backbone", "?"))
+                for r in rtf_128
+            ],
+            rotation=0,
+            ha="center",
+            fontsize=8,
+        )
         ax.set_title(title, fontweight="bold")
         ax.set_ylabel(title)
 
         # Value annotations
         for bar, v in zip(bars, vals):
-            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.005,
-                    f"{v:.3f}", ha="center", va="bottom", fontsize=7)
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + 0.005,
+                f"{v:.3f}",
+                ha="center",
+                va="bottom",
+                fontsize=7,
+            )
 
         # Chance-level baseline
         draw_chance_line(ax, key)
@@ -368,8 +446,12 @@ def fig_backbone_impact(results, output_dir):
         ax.set_xticks(x)
         ax.set_xticklabels(tick_labels, fontsize=8, ha="center")
 
-    fig.suptitle("RTF Performance vs Vision Backbone (128-D) — Pretrained Backbones Hurt",
-                 fontsize=13, fontweight="bold", y=1.02)
+    fig.suptitle(
+        "RTF Performance vs Vision Backbone (128-D) — Pretrained Backbones Hurt",
+        fontsize=13,
+        fontweight="bold",
+        y=1.02,
+    )
     fig.tight_layout(rect=[0, 0, 1, 0.98])
     save_fig(fig, output_dir, "fig_backbone_impact")
 
@@ -377,6 +459,7 @@ def fig_backbone_impact(results, output_dir):
 # ======================================================================
 # FIGURE 4: UMAP embeddings — top 4 models, 2x2 grid
 # ======================================================================
+
 
 def fig_umap(results, emb_dir, output_dir):
     """
@@ -409,8 +492,9 @@ def fig_umap(results, emb_dir, output_dir):
 
         if not os.path.exists(emb_path):
             print(f"  WARN: embedding not found for {name} at {emb_path}")
-            axes[i].text(0.5, 0.5, f"Missing: {name}", transform=axes[i].transAxes,
-                         ha="center", va="center")
+            axes[i].text(
+                0.5, 0.5, f"Missing: {name}", transform=axes[i].transAxes, ha="center", va="center"
+            )
             continue
 
         data = np.load(emb_path, allow_pickle=True)
@@ -418,8 +502,9 @@ def fig_umap(results, emb_dir, output_dir):
         labels = data["labels_fine"]
 
         print(f"  Computing UMAP for {name} ({emb.shape})...")
-        reducer = UMAP(n_components=2, n_neighbors=30, min_dist=0.3,
-                       random_state=42, metric="cosine")
+        reducer = UMAP(
+            n_components=2, n_neighbors=30, min_dist=0.3, random_state=42, metric="cosine"
+        )
         coords = reducer.fit_transform(emb)
 
         ax = axes[i]
@@ -427,26 +512,52 @@ def fig_umap(results, emb_dir, output_dir):
             mask = labels == cls
             if mask.sum() == 0:
                 continue
-            ax.scatter(coords[mask, 0], coords[mask, 1],
-                       c=cls_color, s=12, alpha=0.7,
-                       edgecolors="none", label=CLASS_SHORT.get(cls, cls))
+            ax.scatter(
+                coords[mask, 0],
+                coords[mask, 1],
+                c=cls_color,
+                s=12,
+                alpha=0.7,
+                edgecolors="none",
+                label=CLASS_SHORT.get(cls, cls),
+            )
 
-        ax.set_title(f"{name}\n({format_params(r['n_params'])} params, "
-                     f"LP={r['linear_probe_acc']:.3f})",
-                     fontweight="bold", fontsize=9)
+        ax.set_title(
+            f"{name}\n({format_params(r['n_params'])} params, LP={r['linear_probe_acc']:.3f})",
+            fontweight="bold",
+            fontsize=9,
+        )
         ax.set_xticks([])
         ax.set_yticks([])
 
     # Shared legend
-    legend_handles = [Line2D([0], [0], marker="o", color="w",
-                             markerfacecolor=c, markersize=8,
-                             label=CLASS_SHORT.get(cls, cls))
-                      for cls, c in CLASS_COLORS.items()]
-    fig.legend(handles=legend_handles, loc="lower center",
-               ncol=5, fontsize=9, bbox_to_anchor=(0.5, -0.02), frameon=True)
+    legend_handles = [
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="w",
+            markerfacecolor=c,
+            markersize=8,
+            label=CLASS_SHORT.get(cls, cls),
+        )
+        for cls, c in CLASS_COLORS.items()
+    ]
+    fig.legend(
+        handles=legend_handles,
+        loc="lower center",
+        ncol=5,
+        fontsize=9,
+        bbox_to_anchor=(0.5, -0.02),
+        frameon=True,
+    )
 
-    fig.suptitle("UMAP Projections — Top 4 Models by Linear Probe Accuracy",
-                 fontsize=13, fontweight="bold", y=1.01)
+    fig.suptitle(
+        "UMAP Projections — Top 4 Models by Linear Probe Accuracy",
+        fontsize=13,
+        fontweight="bold",
+        y=1.01,
+    )
     fig.tight_layout(rect=[0, 0.03, 1, 0.97])
     save_fig(fig, output_dir, "fig_umap_top4")
 
@@ -455,6 +566,7 @@ def fig_umap(results, emb_dir, output_dir):
 # FIGURE 5: Params vs Performance — scatter (Dr. KM addition)
 # Efficiency argument in one glance: RTF does more with less.
 # ======================================================================
+
 
 def fig_params_vs_performance(results, output_dir):
     """
@@ -477,44 +589,70 @@ def fig_params_vs_performance(results, output_dir):
         # Bubble size proportional to IF P@20
         size = max(ifp * 500, 40)
 
-        ax.scatter(params, lp, s=size, c=color, alpha=0.7,
-                   edgecolors="black", linewidth=0.5, zorder=3)
+        ax.scatter(
+            params, lp, s=size, c=color, alpha=0.7, edgecolors="black", linewidth=0.5, zorder=3
+        )
 
         # Annotate with short name
         dim = r.get("embed_dim", "?")
         short = f"{dim}D"
         if backbone != "simple":
             short += f"+{BACKBONE_LABELS.get(backbone, backbone)[:4]}"
-        ax.annotate(short, (params, lp), fontsize=5.5,
-                    textcoords="offset points", xytext=(5, 3),
-                    color="black", alpha=0.8)
+        ax.annotate(
+            short,
+            (params, lp),
+            fontsize=5.5,
+            textcoords="offset points",
+            xytext=(5, 3),
+            color="black",
+            alpha=0.8,
+        )
 
     ax.set_xscale("log")
     ax.set_xlabel("Parameters (log scale)", fontweight="bold")
     ax.set_ylabel("Linear Probe Accuracy", fontweight="bold")
-    ax.set_title("Parameter Efficiency: More Parameters ≠ Better Anomaly Detection",
-                 fontweight="bold")
+    ax.set_title(
+        "Parameter Efficiency: More Parameters ≠ Better Anomaly Detection", fontweight="bold"
+    )
 
     # Format x-axis
-    ax.xaxis.set_major_formatter(mticker.FuncFormatter(
-        lambda x, _: format_params(int(x))))
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: format_params(int(x))))
 
     # Legend: architecture color
-    arch_handles = [Line2D([0], [0], marker="o", color="w",
-                           markerfacecolor=c, markersize=8, label=a,
-                           markeredgecolor="black", markeredgewidth=0.5)
-                    for a, c in ARCH_COLORS.items()]
+    arch_handles = [
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="w",
+            markerfacecolor=c,
+            markersize=8,
+            label=a,
+            markeredgecolor="black",
+            markeredgewidth=0.5,
+        )
+        for a, c in ARCH_COLORS.items()
+    ]
 
     # Legend: bubble size
     size_handles = [
-        Line2D([0], [0], marker="o", color="w", markerfacecolor="gray",
-               markersize=np.sqrt(s/np.pi), label=f"IF P@20 = {v:.2f}",
-               markeredgecolor="black", markeredgewidth=0.5)
-        for v, s in [(0.00, 40), (0.10, max(0.10*500, 40)), (0.20, 0.20*500)]
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="w",
+            markerfacecolor="gray",
+            markersize=np.sqrt(s / np.pi),
+            label=f"IF P@20 = {v:.2f}",
+            markeredgecolor="black",
+            markeredgewidth=0.5,
+        )
+        for v, s in [(0.00, 40), (0.10, max(0.10 * 500, 40)), (0.20, 0.20 * 500)]
     ]
 
-    ax.legend(handles=arch_handles + size_handles, loc="lower left",
-              fontsize=7, frameon=True, ncol=2)
+    ax.legend(
+        handles=arch_handles + size_handles, loc="lower left", fontsize=7, frameon=True, ncol=2
+    )
 
     fig.tight_layout()
     save_fig(fig, output_dir, "fig_params_vs_performance")
@@ -525,14 +663,14 @@ def fig_params_vs_performance(results, output_dir):
 # Shows the trade-off shape, not just individual numbers.
 # ======================================================================
 
+
 def fig_radar(results, output_dir):
     """
     Radar/spider chart comparing the 3 baseline architectures (128-D, simple CNN)
     across all 4 evaluation metrics.
     RULE: shows the shape of the trade-off, not just bar heights.
     """
-    baselines = [r for r in results
-                 if r.get("backbone") == "simple" and r.get("embed_dim") == 128]
+    baselines = [r for r in results if r.get("backbone") == "simple" and r.get("embed_dim") == 128]
 
     if len(baselines) < 3:
         print("  SKIP: Not enough 128-D baseline models for radar chart.")
@@ -566,17 +704,19 @@ def fig_radar(results, output_dir):
                 values.append(0.5)
         values += values[:1]
 
-        ax.plot(angles, values, "o-", linewidth=2, label=r["encoder"],
-                color=color, markersize=6)
+        ax.plot(angles, values, "o-", linewidth=2, label=r["encoder"], color=color, markersize=6)
         ax.fill(angles, values, alpha=0.1, color=color)
 
     ax.set_xticks(angles[:-1])
     ax.set_xticklabels(labels, fontweight="bold")
     ax.set_ylim(0, 1.1)
     # Add normalized note so reader knows axes are min-max scaled across all 16 models
-    ax.set_title("Baseline Architecture Comparison (128-D, Simple CNN)\n"
-                 "All axes normalized 0\u20131 across all 16 models",
-                 fontweight="bold", pad=20)
+    ax.set_title(
+        "Baseline Architecture Comparison (128-D, Simple CNN)\n"
+        "All axes normalized 0\u20131 across all 16 models",
+        fontweight="bold",
+        pad=20,
+    )
     ax.legend(loc="upper right", bbox_to_anchor=(1.3, 1.1), frameon=True)
 
     fig.tight_layout()
@@ -588,6 +728,7 @@ def fig_radar(results, output_dir):
 # Inspired by Nabeel's clean tabular presentation, but as a visual.
 # Makes the interaction effect undeniable at a glance.
 # ======================================================================
+
 
 def fig_heatmap(results, output_dir):
     """
@@ -602,7 +743,7 @@ def fig_heatmap(results, output_dir):
 
     # Build matrix (only 128-D for clean comparison)
     matrix = np.full((len(archs), len(backbones_order)), np.nan)
-    annot = [[""]*len(backbones_order) for _ in range(len(archs))]
+    annot = [[""] * len(backbones_order) for _ in range(len(archs))]
 
     for r in results:
         if r.get("embed_dim") != 128:
@@ -621,14 +762,13 @@ def fig_heatmap(results, output_dir):
 
     # Custom colormap: red (bad) -> white -> blue (good)
     from matplotlib.colors import LinearSegmentedColormap
-    cmap = LinearSegmentedColormap.from_list("perf",
-        ["#FCA5A5", "#FFFFFF", "#93C5FD"], N=256)
+
+    cmap = LinearSegmentedColormap.from_list("perf", ["#FCA5A5", "#FFFFFF", "#93C5FD"], N=256)
 
     # Mask NaN cells
     masked = np.ma.masked_invalid(matrix)
 
-    im = ax.imshow(masked, cmap=cmap, aspect="auto",
-                   vmin=0.42, vmax=0.55)
+    im = ax.imshow(masked, cmap=cmap, aspect="auto", vmin=0.42, vmax=0.55)
 
     ax.set_xticks(range(len(bb_labels)))
     ax.set_xticklabels(bb_labels, fontweight="bold")
@@ -639,17 +779,19 @@ def fig_heatmap(results, output_dir):
     for i in range(len(archs)):
         for j in range(len(backbones_order)):
             if annot[i][j]:
-                ax.text(j, i, annot[i][j], ha="center", va="center",
-                        fontsize=7, color="black")
+                ax.text(j, i, annot[i][j], ha="center", va="center", fontsize=7, color="black")
             else:
-                ax.text(j, i, "N/A", ha="center", va="center",
-                        fontsize=8, color="gray", style="italic")
+                ax.text(
+                    j, i, "N/A", ha="center", va="center", fontsize=8, color="gray", style="italic"
+                )
 
     plt.colorbar(im, ax=ax, label="Linear Probe Accuracy", shrink=0.8)
 
-    ax.set_title("Architecture × Backbone Interaction (128-D)\n"
-                 "Pretrained backbones help AstroDistill but hurt RTF",
-                 fontweight="bold")
+    ax.set_title(
+        "Architecture × Backbone Interaction (128-D)\n"
+        "Pretrained backbones help AstroDistill but hurt RTF",
+        fontweight="bold",
+    )
 
     fig.tight_layout()
     save_fig(fig, output_dir, "fig_heatmap_interaction")
@@ -660,6 +802,7 @@ def fig_heatmap(results, output_dir):
 # Mirrors Nabeel's Fig 2 (ROC AUC vs training set size) format.
 # Shows each architecture as a line across its configurations.
 # ======================================================================
+
 
 def fig_metric_vs_params(results, output_dir):
     """
@@ -672,10 +815,13 @@ def fig_metric_vs_params(results, output_dir):
     """
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
-    for ax, (metric, title, std_key) in zip(axes, [
-        ("linear_probe_acc", "Linear Probe Accuracy", "linear_probe_std"),
-        ("if_precision_at_k", "IF Precision @ 20", None),
-    ]):
+    for ax, (metric, title, std_key) in zip(
+        axes,
+        [
+            ("linear_probe_acc", "Linear Probe Accuracy", "linear_probe_std"),
+            ("if_precision_at_k", "IF Precision @ 20", None),
+        ],
+    ):
         for arch, color in ARCH_COLORS.items():
             arch_results = [r for r in results if parse_arch(r["encoder"]) == arch]
             arch_results = sorted(arch_results, key=lambda r: r["n_params"])
@@ -685,10 +831,19 @@ def fig_metric_vs_params(results, output_dir):
             errs = [r.get(std_key, 0) if std_key else 0 for r in arch_results]
 
             # Plot line with error bars
-            ax.errorbar(params, vals, yerr=errs if std_key else None,
-                        fmt="o-", color=color, label=arch,
-                        linewidth=1.5, markersize=5, capsize=3,
-                        elinewidth=1, alpha=0.85)
+            ax.errorbar(
+                params,
+                vals,
+                yerr=errs if std_key else None,
+                fmt="o-",
+                color=color,
+                label=arch,
+                linewidth=1.5,
+                markersize=5,
+                capsize=3,
+                elinewidth=1,
+                alpha=0.85,
+            )
 
             # Annotate each point with dim + backbone
             for r, x, y in zip(arch_results, params, vals):
@@ -697,23 +852,32 @@ def fig_metric_vs_params(results, output_dir):
                 label = f"{dim}D"
                 if bb != "simple":
                     label += f"+{BACKBONE_LABELS.get(bb, bb)[:4]}"
-                ax.annotate(label, (x, y), fontsize=5,
-                            textcoords="offset points", xytext=(4, 4),
-                            color=color, alpha=0.7)
+                ax.annotate(
+                    label,
+                    (x, y),
+                    fontsize=5,
+                    textcoords="offset points",
+                    xytext=(4, 4),
+                    color=color,
+                    alpha=0.7,
+                )
 
         # Chance-level baseline
         draw_chance_line(ax, metric)
 
         ax.set_xscale("log")
-        ax.xaxis.set_major_formatter(mticker.FuncFormatter(
-            lambda x, _: format_params(int(x))))
+        ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: format_params(int(x))))
         ax.set_xlabel("Parameters (log scale)", fontweight="bold")
         ax.set_ylabel(title, fontweight="bold")
         ax.set_title(title, fontweight="bold")
         ax.legend(frameon=True, fontsize=8)
 
-    fig.suptitle("Performance vs Model Size — Each Architecture Across All Configurations",
-                 fontsize=13, fontweight="bold", y=1.02)
+    fig.suptitle(
+        "Performance vs Model Size — Each Architecture Across All Configurations",
+        fontsize=13,
+        fontweight="bold",
+        y=1.02,
+    )
     fig.tight_layout(rect=[0, 0, 1, 0.98])
     save_fig(fig, output_dir, "fig_metric_vs_params")
 
@@ -723,6 +887,7 @@ def fig_metric_vs_params(results, output_dir):
 # RULE: every paper also carries at least one real concrete
 # example sitting next to the aggregate stats."
 # ======================================================================
+
 
 def fig_concrete_example(results, emb_dir, output_dir):
     """
@@ -748,8 +913,7 @@ def fig_concrete_example(results, emb_dir, output_dir):
     obj_ids = data["obj_ids"]
 
     # Run Isolation Forest
-    iso = IsolationForest(n_estimators=200, contamination=0.05,
-                          random_state=42)
+    iso = IsolationForest(n_estimators=200, contamination=0.05, random_state=42)
     iso.fit(emb)
     scores = -iso.decision_function(emb)  # higher = more anomalous
 
@@ -772,30 +936,51 @@ def fig_concrete_example(results, emb_dir, output_dir):
         mask = labels == cls
         if mask.sum() == 0:
             continue
-        ax_scatter.scatter(coords[mask, 0], coords[mask, 1],
-                           c=color, s=10, alpha=0.4, edgecolors="none",
-                           label=CLASS_SHORT.get(cls, cls))
+        ax_scatter.scatter(
+            coords[mask, 0],
+            coords[mask, 1],
+            c=color,
+            s=10,
+            alpha=0.4,
+            edgecolors="none",
+            label=CLASS_SHORT.get(cls, cls),
+        )
 
     # Highlight top-k anomalies with rings
     top_coords = coords[ranked_idx[:top_k]]
     top_labels = labels[ranked_idx[:top_k]]
     [CLASS_COLORS.get(l, "gray") for l in top_labels]
-    ax_scatter.scatter(top_coords[:, 0], top_coords[:, 1],
-                       s=80, facecolors="none", edgecolors="black",
-                       linewidths=1.5, zorder=5, label=f"Top-{top_k} anomalies")
+    ax_scatter.scatter(
+        top_coords[:, 0],
+        top_coords[:, 1],
+        s=80,
+        facecolors="none",
+        edgecolors="black",
+        linewidths=1.5,
+        zorder=5,
+        label=f"Top-{top_k} anomalies",
+    )
 
     # Mark TDEs among top-k with a star
     tde_mask = top_labels == "Tidal Disruption Event"
     if tde_mask.sum() > 0:
-        ax_scatter.scatter(top_coords[tde_mask, 0], top_coords[tde_mask, 1],
-                           s=120, marker="*", c=CLASS_COLORS["Tidal Disruption Event"],
-                           edgecolors="black", linewidths=0.5, zorder=6,
-                           label="TDE (flagged)")
+        ax_scatter.scatter(
+            top_coords[tde_mask, 0],
+            top_coords[tde_mask, 1],
+            s=120,
+            marker="*",
+            c=CLASS_COLORS["Tidal Disruption Event"],
+            edgecolors="black",
+            linewidths=0.5,
+            zorder=6,
+            label="TDE (flagged)",
+        )
 
     ax_scatter.set_xlabel("PCA Component 1", fontweight="bold")
     ax_scatter.set_ylabel("PCA Component 2", fontweight="bold")
-    ax_scatter.set_title("RTF 128-D Embedding Space\nTop-20 Isolation Forest Anomalies Circled",
-                         fontweight="bold")
+    ax_scatter.set_title(
+        "RTF 128-D Embedding Space\nTop-20 Isolation Forest Anomalies Circled", fontweight="bold"
+    )
     ax_scatter.legend(fontsize=7, loc="lower left", frameon=True, ncol=2)
 
     # --- Right: table of top-20 anomalies ---
@@ -811,8 +996,9 @@ def fig_concrete_example(results, emb_dir, output_dir):
         table_data.append([str(rank), obj_id, cls, f"{score:.3f}", is_tde])
 
     col_labels = ["Rank", "ZTF Object ID", "Class", "Anomaly\nScore", "TDE?"]
-    table = ax_table.table(cellText=table_data, colLabels=col_labels,
-                           loc="center", cellLoc="center")
+    table = ax_table.table(
+        cellText=table_data, colLabels=col_labels, loc="center", cellLoc="center"
+    )
     table.auto_set_font_size(False)
     table.set_fontsize(7)
     table.scale(1, 1.2)
@@ -821,21 +1007,26 @@ def fig_concrete_example(results, emb_dir, output_dir):
     for i, row in enumerate(table_data):
         if row[4] == "YES":
             for j in range(5):
-                table[i+1, j].set_facecolor("#D1FAE5")  # light green
+                table[i + 1, j].set_facecolor("#D1FAE5")  # light green
 
     # Header styling
     for j in range(5):
         table[0, j].set_facecolor("#1F2937")
         table[0, j].set_text_props(color="white", fontweight="bold")
 
-    n_tde_found = sum(1 for idx in ranked_idx[:top_k]
-                      if str(labels[idx]) == "Tidal Disruption Event")
-    ax_table.set_title(f"Top-{top_k} Anomalies — {n_tde_found}/{top_k} are TDEs\n"
-                       f"(IF Precision@{top_k} = {n_tde_found/top_k:.2f})",
-                       fontweight="bold", fontsize=10)
+    n_tde_found = sum(
+        1 for idx in ranked_idx[:top_k] if str(labels[idx]) == "Tidal Disruption Event"
+    )
+    ax_table.set_title(
+        f"Top-{top_k} Anomalies — {n_tde_found}/{top_k} are TDEs\n"
+        f"(IF Precision@{top_k} = {n_tde_found / top_k:.2f})",
+        fontweight="bold",
+        fontsize=10,
+    )
 
-    fig.suptitle("Concrete Example: What RTF Flags as Anomalous",
-                 fontsize=13, fontweight="bold", y=1.02)
+    fig.suptitle(
+        "Concrete Example: What RTF Flags as Anomalous", fontsize=13, fontweight="bold", y=1.02
+    )
     fig.tight_layout(rect=[0, 0, 1, 0.98])
     save_fig(fig, output_dir, "fig_concrete_example")
 
@@ -844,18 +1035,15 @@ def fig_concrete_example(results, emb_dir, output_dir):
 # MAIN
 # ======================================================================
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Generate publication-quality figures for the RTF paper."
     )
-    parser.add_argument("--results", required=True,
-                        help="Path to comparison_results.json")
-    parser.add_argument("--emb-dir", required=True,
-                        help="Directory containing emb_*.npz files")
-    parser.add_argument("--output-dir", default="figures",
-                        help="Output directory for figures")
-    parser.add_argument("--skip-umap", action="store_true",
-                        help="Skip UMAP (requires umap-learn)")
+    parser.add_argument("--results", required=True, help="Path to comparison_results.json")
+    parser.add_argument("--emb-dir", required=True, help="Directory containing emb_*.npz files")
+    parser.add_argument("--output-dir", default="figures", help="Output directory for figures")
+    parser.add_argument("--skip-umap", action="store_true", help="Skip UMAP (requires umap-learn)")
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
